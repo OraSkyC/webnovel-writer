@@ -202,6 +202,9 @@ def _apply_project_route_override(root: Path, kind: str, payload: Any):
     master_section = cfg.get("master_constraints")
     core_tone = master_section.get("core_tone", "") if isinstance(master_section, dict) else ""
     if kind == "master" and isinstance(payload, dict):
+        # 🔴 fork：返回**新对象**，不原地改调用方持有的 dict。
+        #    原地改会让调用方在 persist 之后复用同一份 payload 时被污染。
+        payload = dict(payload)
         for key in ("route", "master_constraints", "override_policy"):
             if isinstance(cfg.get(key), dict):
                 payload[key] = cfg[key]
@@ -217,6 +220,7 @@ def _apply_project_route_override(root: Path, kind: str, payload: Any):
                 if str(text).strip()
             ]
     elif kind in ("volume", "review") and isinstance(payload, dict):
+        payload = dict(payload)        # 同上：不原地改调用方的对象
         section = cfg.get(kind)
         if isinstance(section, dict):
             payload.update(section)

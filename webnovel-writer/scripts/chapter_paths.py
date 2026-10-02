@@ -21,6 +21,24 @@ _OUTLINE_HEADING_RE = re.compile(r"^#{1,6}\s*第\s*(?P<num>\d+)\s*章[：:]\s*(?
 _SPLIT_OUTLINE_FILENAME_RE = re.compile(r"^第0*(?P<num>\d+)章[-—_ ]+(?P<title>.+?)\.md$")
 
 
+_SHIM_TITLE_PREFIX_RE = re.compile(r"^卷\d+第\d+章[-—_ ]*")
+
+
+def _strip_shim_prefix(title: str) -> str:
+    """剥掉垫片文件名带出来的「卷N第NN章-」前缀。
+
+    垫片命名约定是 ``第{全局号:04d}章-卷{vol}第{idx:02d}章-{标题}.md``
+    （真源：项目侧 工具/章节编号同步.py），正则捕获到的"标题"因此是
+    ``卷2第01章-黄金六个月`` 而不是 ``黄金六个月``——直接拿去拼章节文件名
+    会得到 ``第0001章-卷2第01章-黄金六个月.md``。没有该前缀的文件名原样返回。
+    """
+    text = title or ""
+    m = _SHIM_TITLE_PREFIX_RE.match(text)
+    if m and text[m.end():].strip():
+        return text[m.end():].strip()
+    return text
+
+
 def volume_num_for_chapter(chapter_num: int, *, chapters_per_volume: int = 50) -> int:
     if chapter_num <= 0:
         raise ValueError("chapter_num must be >= 1")
@@ -55,7 +73,7 @@ def _extract_title_from_outline_text(outline_text: str, chapter_num: int) -> str
     for match in _OUTLINE_HEADING_RE.finditer(outline_text):
         if int(match.group("num")) != chapter_num:
             continue
-        return _safe_title_for_filename(match.group("title"))
+        return _safe_title_for_filename(_strip_shim_prefix(match.group("title")))
     return ""
 
 
@@ -67,13 +85,21 @@ def _extract_title_from_split_outline_filename(outline_dir: Path, chapter_num: i
         f"第{chapter_num:04d}章*.md",
     ]
     for pattern in patterns:
-        for path in sorted(outline_dir.glob(pattern)):
+        # 根目录优先（插件原行为），其次任意深度的子目录——顺序与
+        # _find_split_outline_file 保持一致。
+        # 🔴 fork：全局章号垫片住在 大纲/垫片/卷N/ 子目录后，只 glob 根目录
+        #    会取不到标题 ⇒ extract_chapter_title() 回退空 ⇒ 新建章节文件名
+        #    退化成 第NNNN章.md（卷内编号的书会撞成一排同名文件）。
+        flat = sorted(outline_dir.glob(pattern))
+        nested = sorted(p for p in outline_dir.rglob(pattern)
+                        if p.parent != outline_dir)
+        for path in flat + nested:
             match = _SPLIT_OUTLINE_FILENAME_RE.match(path.name)
             if not match:
                 continue
             if int(match.group("num")) != chapter_num:
                 continue
-            title = _safe_title_for_filename(match.group("title"))
+            title = _safe_title_for_filename(_strip_shim_prefix(match.group("title")))
             if title:
                 return title
     return ""
@@ -115,17 +141,6 @@ def find_chapter_file(project_root: Path, chapter_num: int) -> Optional[Path]:
     if not chapters_dir.exists():
         return None
 
-    legacy = chapters_dir / f"第{chapter_num:04d}章.md"
-    if legacy.exists():
-        return legacy
-
-    vol_dir = chapters_dir / f"第{volume_num_for_chapter(chapter_num)}卷"
-    if vol_dir.exists():
-        candidates = sorted(vol_dir.glob(f"第{chapter_num:03d}章*.md")) + sorted(vol_dir.glob(f"第{chapter_num:04d}章*.md"))
-        for c in candidates:
-            if c.is_file():
-                return c
-
     # >>> vol-local-renumber (shikong) >>>
     # fork 内置行为（原先由「工具/安装插件卷内编号补丁.py」在运行时给已安装插件打补丁，
     # 现在合入 fork 源码，无需再跑补丁脚本）。
@@ -161,6 +176,22 @@ def find_chapter_file(project_root: Path, chapter_num: int) -> Optional[Path]:
                             if c.is_file():
                                 return c
     # <<< vol-local-renumber (shikong) <<<
+
+    # 垫片规则排在 legacy 与 卷目录 规则**之前**：垫片是本项目声明的编号真源
+    # （由 项目侧 工具/章节编号同步.py 从 state.json 重建），先查它才不会在
+    # 出现「规范卷目录 + 卷内编号」时被抢先命中。旧书两种编号并存时，
+    # legacy 的精确文件名匹配仍会命中同样的文件，行为不变。
+    legacy = chapters_dir / f"第{chapter_num:04d}章.md"
+    if legacy.exists():
+        return legacy
+
+    vol_dir = chapters_dir / f"第{volume_num_for_chapter(chapter_num)}卷"
+    if vol_dir.exists():
+        candidates = sorted(vol_dir.glob(f"第{chapter_num:03d}章*.md")) + sorted(vol_dir.glob(f"第{chapter_num:04d}章*.md"))
+        for c in candidates:
+            if c.is_file():
+                return c
+
 
     # Fallback: search anywhere under 正文/ (supports custom layouts)
     candidates = sorted(chapters_dir.rglob(f"第{chapter_num:03d}章*.md")) + sorted(chapters_dir.rglob(f"第{chapter_num:04d}章*.md"))
