@@ -14,9 +14,8 @@
 | 题材/写法数据 | 9 CSV | `references/csv/*.csv` |
 | 题材模板 | 按题材 | `templates/genres/*.md` |
 | Dashboard 前端 | 预打包 | `dashboard/frontend/dist/`（随包发布，无需本地构建） |
-| 裁决台 | 随包组件 | `ruling-desk/`（backend + 预打包前端 + 卡规范；纯标准库，无需 pip install） |
 
-### 8 个 Skill
+### 7 个 Skill
 
 | 命令 | 用途 |
 |------|------|
@@ -27,9 +26,8 @@
 | `/webnovel-query` | 查询设定、角色、伏笔、运行时信息（只读） |
 | `/webnovel-learn` | 把有效写法沉淀进项目长期记忆 |
 | `/webnovel-dashboard` | 启动只读可视化面板 |
-| `/webnovel-ruling` | 启动作者裁决台：逐条看证据、点选裁定；裁定落盘后由 `ruling-executor` 施工 |
 
-### 5 个 Agent
+### 4 个 Agent
 
 | Agent | 职责 | 被谁调用 |
 |-------|------|---------|
@@ -37,7 +35,13 @@
 | `reviewer` | 逐维度事实审查 | `/webnovel-write` Step 3、`/webnovel-review` |
 | `data-agent` | 从正文提取事实，生成 commit artifacts | `/webnovel-write` Step 5 |
 | `deconstruction-agent` | 参考书拆解，提炼可迁移写法 | `/webnovel-init` Step 1.5 |
-| `ruling-executor` | 执行作者已作出的裁定，逐条施工并回写状态 | `/webnovel-ruling` 收尾 |
+
+### 与其他插件组合
+
+待裁卡（`meta.status=rejected` 的 pending/issues）由**独立插件 `webnovel-ruling`** 呈给作者逐条裁定：
+本插件在 Step 3 遇到无法定点修复的 blocking 问题、或 Step 5.2 得到 rejected 时，会调用
+`/webnovel-ruling`（装了才生效，没装则退回聊天里的三选项裁决），并提供 `ruling-executor` 执行已作出的裁定。
+两个插件装在同一个 marketplace 下即可组合，本插件不随包带裁决台的任何文件。
 
 ## 依赖与安装
 

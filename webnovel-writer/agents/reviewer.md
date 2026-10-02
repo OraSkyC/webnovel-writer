@@ -144,8 +144,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 ## 10. 裁决台卡字段规范（fork 新增）
 
 写进 `.webnovel/tmp/review_results.json` 的 `issues[]`，以及消歧/履约产物里的待确认条目，
-若要被**裁决台**逐条呈给作者裁，须额外带上这些字段（规范全文见
-`ruling-desk/docs/裁决台JSON规范.md`，必填与受控词表以它为准）：
+若要被**裁决台**逐条呈给作者裁，须额外带上这些字段（规范全文见 `webnovel-ruling` 插件里的
+`docs/裁决台JSON规范.md`——裁决台是**另一个插件**，本插件不随包带它；必填与受控词表以那份规范为准）：
 
 | 字段 | 要求 |
 |------|------|
@@ -163,4 +163,4 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `fix_hint` | 可选，条件式施工说明（「若选 A 则…」）。不要在里面提问，不要塞路径 |
 
 缺 `bucket` / 词表外的 `bucket` / `severity` / `blocking` 非布尔 ⇒ 卡校验器判 ERROR，
-会被门拦下（`ruling-desk/backend/校验pending.py --project-root <项目根>`）。
+会被 `webnovel-ruling` 插件的校验门拦下（`校验pending.py --project-root <项目根>`）。

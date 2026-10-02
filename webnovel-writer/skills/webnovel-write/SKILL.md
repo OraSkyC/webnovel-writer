@@ -161,14 +161,12 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rev
 
 审查只跑一轮，reviewer 只调用一次。`blocking=true` 的问题在不改剧情、不破设定的前提下定点修复后直接进 Step 4，不重新调用 reviewer；确实无法修复的 blocking 问题按下方「裁决台分支」处理（默认开台子逐条裁定，`--no-ruling` 时才退回 `AskUserQuestion` 让用户裁决：接受当前版本 / 手动修复 / 放弃）。非 blocking issue 交给 Step 4 处理。`--fast` 只检查 setting/timeline/continuity。
 
-**裁决台分支（待裁卡 ≥1 时的默认路径）**：用 `Agent`/`Skill` 调起 `webnovel-ruling` 技能，它会起服务并给出 `http://127.0.0.1:<port>`；把地址告诉用户，等他在浏览器里逐条裁定。**不要**替他猜裁定，也不要把证据摘要成聊天里的三选项——台子上有完整证据与候选解。裁定完成后：
-
-```bash
-# 卡校验门：0 ERROR 才往下走；形状错回产出侧就地修，不重跑 reviewer
-python -X utf8 "${CLAUDE_PLUGIN_ROOT}/ruling-desk/backend/校验pending.py" --project-root "${PROJECT_ROOT}" --json
-```
-
-然后用 `Agent` 工具起 `ruling-executor` 施工，最后**原样重跑 Step 5.2 的 chapter-commit 命令**（pending 清空即 accepted）。
+**裁决台分支（待裁卡 ≥1 时的默认路径）**：调用 `/webnovel-ruling` 技能（**另一个插件**，
+装了才有；没装就退回 AskUserQuestion 三选项）。它会起自己的服务、给出 `http://127.0.0.1:<port>`、
+自带卡校验门，并把裁定落盘；把地址告诉用户，等他在浏览器里逐条裁定。
+**不要**替他猜裁定，也不要把证据摘要成聊天里的三选项——台子上有完整证据与候选解。
+裁定完成后用 `Agent` 工具起 `ruling-executor` 施工，最后**原样重跑 Step 5.2 的 chapter-commit 命令**
+（pending 清空即 accepted）。本技能不引用裁决台的任何文件路径——它在另一个插件里。
 
 `--minimal` 不调用 reviewer 与 `review-pipeline`，但必须**覆盖写入**本章新的 no-review `review_results.json`（禁止复用旧 artifact），使 Step 5 提交链有有效 `--review-result`（成功标准“审查已落库”对 `--minimal` 的豁免仍成立）：
 

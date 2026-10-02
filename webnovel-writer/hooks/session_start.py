@@ -59,16 +59,14 @@ def main() -> int:
     output = _clip(proc.stdout or proc.stderr or "")
     if output:
         print(output)
-    # 🟢 裁决台（ruling-desk）待裁提醒：待裁卡积到一定量就该让作者看见。
-    #    纯只读、失败即静默——会话开始时多一行提示，不值得任何风险。
+    # 🟢 待裁提醒：有 rejected 章产物就提示一句，指向**另一个插件**的 /webnovel-ruling。
+    #    不检查它装没装（本插件看不到别的插件目录），纯只读、失败即静默。
     try:
-        desk = plugin_root / "ruling-desk"
-        if (desk / "backend" / "ruling_server.py").is_file():
-            pending = len(list((workspace_root / ".story-system" / "commits")
-                               .glob("chapter_*.commit.json")))
-            if pending:
-                print("待裁卡在 .story-system/commits（%d 章产物）；要开台子：/webnovel-ruling"
-                      % pending)
+        pending = len(list((workspace_root / ".story-system" / "commits")
+                           .glob("chapter_*.commit.json")))
+        if pending:
+            print("待裁卡在 .story-system/commits（%d 章产物）；装了 webnovel-ruling 插件可用 /webnovel-ruling 开台子"
+                  % pending)
     except Exception:
         pass
     return 0
