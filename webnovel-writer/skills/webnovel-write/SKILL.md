@@ -23,7 +23,7 @@ argument-hint: "[章号] [--fast|--minimal]"
 
 - 禁止并步、跳步、伪造审查
 - 必须使用 `Agent` 工具调用指定 subagent；不得用主流程口头代替 subagent 输出
-- 审查只跑一轮；blocking issue 定点修复或经用户裁决后才进 Step 4/5
+- 审查只跑一轮；blocking issue 定点修复、或经用户裁决、或在裁决台逐条裁定后才进 Step 4/5
 - 失败只补跑失败步骤，不回退
 - 参考资料按步骤按需加载
 
@@ -159,7 +159,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rev
   --save-metrics
 ```
 
-审查只跑一轮，reviewer 只调用一次。`blocking=true` 的问题在不改剧情、不破设定的前提下定点修复后直接进 Step 4，不重新调用 reviewer；确实无法修复的 blocking 问题用 `AskUserQuestion` 让用户裁决（接受当前版本 / 手动修复 / 放弃）。非 blocking issue 交给 Step 4 处理。`--fast` 只检查 setting/timeline/continuity。
+审查只跑一轮，reviewer 只调用一次。`blocking=true` 的问题在不改剧情、不破设定的前提下定点修复后直接进 Step 4，不重新调用 reviewer；确实无法修复的 blocking 问题按下方「裁决台分支」处理（默认开台子逐条裁定，`--no-ruling` 时才退回 `AskUserQuestion` 让用户裁决：接受当前版本 / 手动修复 / 放弃）。非 blocking issue 交给 Step 4 处理。`--fast` 只检查 setting/timeline/continuity。
+
+**裁决台分支（待裁卡 ≥1 时的默认路径）**：用 `Agent`/`Skill` 调起 `webnovel-ruling` 技能，它会起服务并给出 `http://127.0.0.1:<port>`；把地址告诉用户，等他在浏览器里逐条裁定。**不要**替他猜裁定，也不要把证据摘要成聊天里的三选项——台子上有完整证据与候选解。裁定完成后：
+
+```bash
+# 卡校验门：0 ERROR 才往下走；形状错回产出侧就地修，不重跑 reviewer
+python -X utf8 "${CLAUDE_PLUGIN_ROOT}/ruling-desk/backend/校验pending.py" --project-root "${PROJECT_ROOT}" --json
+```
+
+然后用 `Agent` 工具起 `ruling-executor` 施工，最后**原样重跑 Step 5.2 的 chapter-commit 命令**（pending 清空即 accepted）。
 
 `--minimal` 不调用 reviewer 与 `review-pipeline`，但必须**覆盖写入**本章新的 no-review `review_results.json`（禁止复用旧 artifact），使 Step 5 提交链有有效 `--review-result`（成功标准“审查已落库”对 `--minimal` 的豁免仍成立）：
 
@@ -326,7 +335,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" use
 2. 审查已落库（`--minimal` 除外）
 3. blocking=true 必须在 Step 3 定点修复或经用户裁决
 4. anti_ai_force_check=pass（`--minimal` 除外）
-5. accepted CHAPTER_COMMIT，projection 五项 done/skipped
+5. accepted CHAPTER_COMMIT，projection 五项 done/skipped（pending 类待裁卡必须已由裁决台裁定并由 executor 施工，否则回到 Step 5.2 重跑）
 6. chapter_status=committed（projection 自动推进）
 7. `write-gate` 的 prewrite / precommit / postcommit 均通过
 

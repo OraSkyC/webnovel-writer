@@ -59,6 +59,18 @@ def main() -> int:
     output = _clip(proc.stdout or proc.stderr or "")
     if output:
         print(output)
+    # 🟢 裁决台（ruling-desk）待裁提醒：待裁卡积到一定量就该让作者看见。
+    #    纯只读、失败即静默——会话开始时多一行提示，不值得任何风险。
+    try:
+        desk = plugin_root / "ruling-desk"
+        if (desk / "backend" / "ruling_server.py").is_file():
+            pending = len(list((workspace_root / ".story-system" / "commits")
+                               .glob("chapter_*.commit.json")))
+            if pending:
+                print("待裁卡在 .story-system/commits（%d 章产物）；要开台子：/webnovel-ruling"
+                      % pending)
+    except Exception:
+        pass
     return 0
 
 

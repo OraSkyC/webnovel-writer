@@ -140,3 +140,27 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 - 无法读取角色状态 → 跳过设定一致性检查，在 summary 中标注"无法校验设定一致性：数据读取失败"
 - 无法读取上章摘要 → 跳过连贯性检查中的"上章钩子回应"项
 - 正文为空 → 输出单条 critical issue："正文为空"
+
+## 10. 裁决台卡字段规范（fork 新增）
+
+写进 `.webnovel/tmp/review_results.json` 的 `issues[]`，以及消歧/履约产物里的待确认条目，
+若要被**裁决台**逐条呈给作者裁，须额外带上这些字段（规范全文见
+`ruling-desk/docs/裁决台JSON规范.md`，必填与受控词表以它为准）：
+
+| 字段 | 要求 |
+|------|------|
+| `title` | 一行短标题，≥12 字（短标题会被自动去重逻辑跳过合并） |
+| `bucket` | 受控词表，取项目配置 `.webnovel/ruling-desk.json` 的 `vocab.bucket`；**不要自造词** |
+| `severity` | 受控词表：`blocking/critical/high/major/medium/low/minor/info`（`critical|high|medium|low` 是其子集） |
+| `blocking` | `true` / `false`，必须是布尔 |
+| `statement` / `why_pending` / `impact` | 三段说清：是什么 / 为什么待裁 / 不裁的后果 |
+| `severity_note` | 严重度的补充理由（徽章补语，不代替 impact） |
+| `evidence.authority` | `[{volume, lines:[…]}]`，**合并同卷、升序去重**；不要写 `line` 或 `label` |
+| `evidence.text` | `[{file, lines:[…]}]`，**一个文件一条**；同文件多段要合并成一条 |
+| `evidence.other` | 检索记录/复现命令等，字符串数组 |
+| `candidates[]` | 可选。必填 `key`(A-C) / `title`(≤40) / `body`(≤2000)；`recommended` 至多一个 true |
+| `recommendation` | 可选，**对象**：`{text, by:"lane", confidence:0~1}`。有候选时理由写成对比，不复述选项键 |
+| `fix_hint` | 可选，条件式施工说明（「若选 A 则…」）。不要在里面提问，不要塞路径 |
+
+缺 `bucket` / 词表外的 `bucket` / `severity` / `blocking` 非布尔 ⇒ 卡校验器判 ERROR，
+会被门拦下（`ruling-desk/backend/校验pending.py --project-root <项目根>`）。
