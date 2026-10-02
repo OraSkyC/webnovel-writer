@@ -180,6 +180,14 @@ python -X utf8 -c "import json,os; from pathlib import Path; root=Path(os.enviro
 
 顺序：修复非 blocking issue → 风格适配 → 排版 → Anti-AI 终检。
 
+**排版有可执行检查，别只靠自觉**：排版阶段前后各跑一次 `prose-lint`（11 条规则：半角引号／叙事加粗／独立成段破折号／引号配平／乱码／占位符／半角句点／连续空行／重复段落／字数越界），有命中就定点修：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" prose-lint --chapter {chapter_num} --format text
+```
+
+字数区间默认取 `references/style-adapter.md` 的 2000-2500；本书另有口径时传 `--min-chars/--max-chars`。`--json` 输出可被 Step 3/5 复用。
+
 只改表达不改事实。`anti_ai_force_check=fail` 时不进 Step 5。`--minimal` 仅排版。
 
 ### Step 5：提交

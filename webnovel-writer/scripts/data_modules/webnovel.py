@@ -574,6 +574,14 @@ def main() -> None:
     p_placeholder_scan = sub.add_parser("placeholder-scan", help="扫描大纲/设定集未补齐占位")
     p_placeholder_scan.add_argument("--format", choices=["json", "text"], default="json", help="输出格式")
 
+    p_prose_lint = sub.add_parser("prose-lint", help="正文排版红线检查（11 条可执行规则）")
+    p_prose_lint.add_argument("--chapter", type=int, default=None, help="只查这一章")
+    p_prose_lint.add_argument("--format", choices=["json", "text"], default="json", help="输出格式")
+    p_prose_lint.add_argument("--min-chars", type=int, default=2000, help="字数下限（默认取 style-adapter.md 的 2000）")
+    p_prose_lint.add_argument("--max-chars", type=int, default=2500, help="字数上限（默认取 style-adapter.md 的 2500）")
+    p_prose_lint.add_argument("--rule", action="append", default=None, help="只跑指定规则（可重复）")
+    p_prose_lint.add_argument("--allow-file", default=None, help="重复段落豁免清单（JSON）")
+
     p_master_outline_sync = sub.add_parser("master-outline-sync", help="当前卷规划完成后写回 V+1 最小总纲锚点")
     p_master_outline_sync.add_argument("--volume", type=int, required=True, help="当前已完成规划的卷号")
     p_master_outline_sync.add_argument("--writeback-file", default="", help="显式结构化写回 JSON")
@@ -688,6 +696,16 @@ def main() -> None:
         raise SystemExit(_run_script("review_pipeline.py", return_args))
     if tool == "placeholder-scan":
         raise SystemExit(_run_data_module("placeholder_scanner", [*forward_args, "--format", str(args.format)]))
+    if tool == "prose-lint":
+        return_args = [*forward_args, "--format", str(args.format),
+                       "--min-chars", str(args.min_chars), "--max-chars", str(args.max_chars)]
+        if args.chapter is not None:
+            return_args.extend(["--chapter", str(args.chapter)])
+        for rule in (args.rule or []):
+            return_args.extend(["--rule", str(rule)])
+        if args.allow_file:
+            return_args.extend(["--allow-file", str(args.allow_file)])
+        raise SystemExit(_run_data_module("prose_lint", return_args))
     if tool == "master-outline-sync":
         return_args = [*forward_args, "--volume", str(args.volume), "--format", str(args.format)]
         if args.writeback_file:
