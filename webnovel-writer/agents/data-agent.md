@@ -118,3 +118,35 @@ artifacts 失败→重跑 C/D。commit 失败→修复三份 JSON 后补提。pr
 - `needs_user_action`：低置信度歧义会影响事实入库、pending 非空或 schema 失败时为 true。
 - `duration_ms`：由主流程计时记录。
 - `outputs`：`fulfillment_result.json`、`disambiguation_result.json`、`extraction_result.json`。
+
+## 裁决台卡字段规范（fork 新增）
+
+`disambiguation_result.json` 的 `pending[]`（以及履约类待确认条目）会被**裁决台**逐条呈给作者裁，
+所以每条**尽量**按下列字段写。规范全文见 `cadt-ruling` 插件里的 `docs/裁决台JSON规范.md`
+（裁决台是**另一个插件**，本插件不随包带它；必填与受控词表以那份规范为准）。
+
+🔴 插件 schema 对 `pending[]` 的约束只有「是个列表」（`list[Any]`），**每条什么形状都不校验**——
+所以这一节是唯一的形状来源。不按规范写也能上台面（裁决台装载层会兜底补齐），但那样卡上没有
+候选解和施工说明，作者裁不动。
+
+| 字段 | 要求 |
+|------|------|
+| `id` | 章内稳定短标识（字母数字与连字符），裁决台会拼成 `P-chNNN-<id>` |
+| `title` | 一行短标题，≥12 字（过短会被自动去重逻辑跳过合并） |
+| `bucket` | 受控词表，取项目配置 `.webnovel/ruling-desk.json` 的 `vocab.bucket`；**不要自造词** |
+| `severity` | 受控词表：`blocking/critical/high/major/medium/low/minor/info` |
+| `blocking` | `true` / `false`，必须是布尔（字符串「否」是真值，判断会反） |
+| `statement` | 问题是什么，一句话说清 |
+| `why_pending` | 为什么需要作者裁（置信度不足 / 两个读法都成立 / 授权缺失 …） |
+| `impact` | 不裁的后果（检索会漏 / 事实入库会错 / 下章会踩 …） |
+| `severity_note` | 严重度的补充理由（徽章补语，不代替 impact） |
+| `evidence.authority` | `[{volume, lines:[…]}]`，**合并同卷、升序去重**；不要写 `line` 或 `label` |
+| `evidence.text` | `[{file, lines:[…]}]`，**一个文件一条**；同文件多段要合并成一条 |
+| `evidence.other` | 检索记录/复现命令等，字符串数组 |
+| `candidates[]` | 候选解。必填 `key`(A-C) / `title`(≤40) / `body`(≤2000)；`recommended` 至多一个 true。**这一项最要紧**——没有候选作者只能干看着 |
+| `recommendation` | 可选，**对象**：`{text, by:"lane", confidence:0~1}`。有候选时理由写成对比，不复述选项键 |
+| `fix_hint` | 可选，条件式施工说明（「若选 A 则…」）。不要在里面提问，不要塞绝对路径 |
+
+`extraction_result.json` / `fulfillment_result.json` **不需要**改形状：前者是投影器的输入
+（字段名是契约，改了会破坏投影），后者的四个数组（planned/covered/missed/extra）是履约统计，
+裁决台看它们只是为了算「章为什么被拒」，不生成卡。
