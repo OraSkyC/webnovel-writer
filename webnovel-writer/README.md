@@ -38,9 +38,9 @@
 
 ### 与其他插件组合
 
-待裁卡（`meta.status=rejected` 的 pending/issues）由**独立插件 `webnovel-ruling`** 呈给作者逐条裁定：
+待裁卡（`meta.status=rejected` 的 pending/issues）由**独立插件 `cadt-ruling`** 呈给作者逐条裁定：
 本插件在 Step 3 遇到无法定点修复的 blocking 问题、或 Step 5.2 得到 rejected 时，会调用
-`/webnovel-ruling`（装了才生效，没装则退回聊天里的三选项裁决），并提供 `ruling-executor` 执行已作出的裁定。
+`/cadt-ruling`（装了才生效，没装则退回聊天里的三选项裁决），并提供 `ruling-executor` 执行已作出的裁定。
 两个插件装在同一个 marketplace 下即可组合，本插件不随包带裁决台的任何文件。
 
 ## 依赖与安装

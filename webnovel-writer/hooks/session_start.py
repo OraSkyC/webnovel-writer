@@ -59,13 +59,13 @@ def main() -> int:
     output = _clip(proc.stdout or proc.stderr or "")
     if output:
         print(output)
-    # 🟢 待裁提醒：有 rejected 章产物就提示一句，指向**另一个插件**的 /webnovel-ruling。
+    # 🟢 待裁提醒：有 rejected 章产物就提示一句，指向**另一个插件**的 /cadt-ruling。
     #    不检查它装没装（本插件看不到别的插件目录），纯只读、失败即静默。
     try:
         pending = len(list((workspace_root / ".story-system" / "commits")
                            .glob("chapter_*.commit.json")))
         if pending:
-            print("待裁卡在 .story-system/commits（%d 章产物）；装了 webnovel-ruling 插件可用 /webnovel-ruling 开台子"
+            print("待裁卡在 .story-system/commits（%d 章产物）；装了 cadt-ruling 插件可用 /cadt-ruling 开台子"
                   % pending)
     except Exception:
         pass
