@@ -63,7 +63,9 @@ ROOT = (CLI.project_root or os.environ.get("ROOT")
         or os.path.dirname(os.path.dirname(_HERE)))
 CFG = ruling_config.load(ROOT, cli={"port": CLI.port,
                                    "frontend_dist": CLI.frontend_dist})
-_PROJECT_CFG_PATH = os.path.join(ROOT, ".webnovel", "ruling-desk.json")
+PROJECT_CFG_PATH = (os.path.join(ROOT, ".webnovel", "ruling-desk.json")
+                    if os.path.isfile(os.path.join(ROOT, ".webnovel", "ruling-desk.json"))
+                    else None)
 for _note in CFG.notes:
     print("⚠ " + _note, flush=True)
 
@@ -1647,7 +1649,8 @@ def main():
 
     print("裁决台 v%s（规范 %s）｜配置：%s"
           % (DESK.get("version"), DESK.get("spec_version") or "未标",
-             _PROJECT_CFG_PATH or "仅 backend/config.json"), flush=True)
+             PROJECT_CFG_PATH or "无项目配置（用 backend/config.json 或内置缺省）"),
+          flush=True)
     print("启动：http://127.0.0.1:%d" % PORT, flush=True)
     Threaded(("127.0.0.1", PORT), H).serve_forever()
 
