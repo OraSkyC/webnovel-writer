@@ -63,6 +63,7 @@ ROOT = (CLI.project_root or os.environ.get("ROOT")
         or os.path.dirname(os.path.dirname(_HERE)))
 CFG = ruling_config.load(ROOT, cli={"port": CLI.port,
                                    "frontend_dist": CLI.frontend_dist})
+_PROJECT_CFG_PATH = os.path.join(ROOT, ".webnovel", "ruling-desk.json")
 for _note in CFG.notes:
     print("⚠ " + _note, flush=True)
 
@@ -92,6 +93,26 @@ PORT = int(_cfg("port", 8848))
 LOCK = threading.Lock()
 
 CANON_DIR = _cfg("canon_dir", "")
+
+
+def _load_desk_info():
+    """裁决台组件自己的版本清单（ruling-desk/desk.json）。
+    🟢 组件版本与插件版本**各自独立**：插件版本随插件发布走，这里只管
+    「代码 + 规范 + 校验器 + 前端」这一坨——它们必须一起走同一个版本，
+    否则反馈问题时说不清手上是哪个台子。"""
+    p = os.path.join(os.path.dirname(_HERE), "desk.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            d = json.load(fh)
+        return {"name": d.get("name") or "ruling-desk",
+                "version": d.get("version") or "0.0.0",
+                "spec_version": d.get("spec_version") or ""}
+    except Exception as e:
+        return {"name": "ruling-desk", "version": "?", "spec_version": "",
+                "error": str(e)[:80]}
+
+
+DESK = _load_desk_info()
 
 
 def _canon_files():
@@ -1258,6 +1279,8 @@ def _meta_payload():
     """小而稳定的启动元数据——原先每次 /api/items 都捎带一份（实测占 1/4 体积）。"""
     return {
         "verdicts": VERDICTS, "labels": LABELS,
+        # 🟢 组件自己的版本（与插件版本独立）——界面顶栏显示它，反馈问题时报这个号
+        "desk": DESK,
         # 🟢 规范 1.3：领域词表随 meta 下发——筛选下拉用**完整配置词表**
         #    （含暂无卡片的类别），不在界面另抄一份、也不只看数据里出现过的值。
         "vocab": {"bucket": BUCKETS_ORDER},
@@ -1622,6 +1645,9 @@ def main():
         daemon_threads = True
         allow_reuse_address = True
 
+    print("裁决台 v%s（规范 %s）｜配置：%s"
+          % (DESK.get("version"), DESK.get("spec_version") or "未标",
+             _PROJECT_CFG_PATH or "仅 backend/config.json"), flush=True)
     print("启动：http://127.0.0.1:%d" % PORT, flush=True)
     Threaded(("127.0.0.1", PORT), H).serve_forever()
 

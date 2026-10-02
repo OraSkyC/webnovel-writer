@@ -173,6 +173,61 @@ def render_chapter_markdown(chapter_payload: Dict[str, Any]) -> str:
     )
 
 
+# >>> project-route-override (shikong) >>>
+def _apply_project_route_override(root: Path, kind: str, payload: Any):
+    """写合同前套用作者裁决的路由（fork 内置行为）。
+
+    原先由「工具/安装插件路由补丁.py」在运行时给已安装插件打补丁，现合入 fork 源码。
+
+    读取 ``<root>/project_route_override.json``，其中 ``root`` 是 ``.story-system`` 目录。
+    文件存在时，story-system --persist / --emit-runtime-contracts 会强制保留作者裁决的
+    route / master_constraints / anti_patterns，以及 volume/review 的题材口径，
+    避免科幻项目被 GR-012 末世求生之类的通用条目覆盖。
+    文件缺失或格式非法时原样返回 payload（no-op）。
+
+    约定：``anti_patterns`` 为字符串列表；``volume`` / ``review`` 为字典，键直接 update
+    进对应 payload；``master_constraints.core_tone`` 在 review 缺 system_constraints 时
+    作为兜底注入。
+    """
+    cfg_path = root / "project_route_override.json"
+    if not cfg_path.is_file():
+        return payload
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return payload
+    if not isinstance(cfg, dict):
+        return payload
+    override_rows = cfg.get("anti_patterns")
+    master_section = cfg.get("master_constraints")
+    core_tone = master_section.get("core_tone", "") if isinstance(master_section, dict) else ""
+    if kind == "master" and isinstance(payload, dict):
+        for key in ("route", "master_constraints", "override_policy"):
+            if isinstance(cfg.get(key), dict):
+                payload[key] = cfg[key]
+    elif kind == "anti_patterns":
+        if isinstance(override_rows, list) and override_rows:
+            return [
+                {
+                    "text": str(text),
+                    "source_table": "project_override",
+                    "source_id": f"QI-{i + 1:02d}",
+                }
+                for i, text in enumerate(override_rows)
+                if str(text).strip()
+            ]
+    elif kind in ("volume", "review") and isinstance(payload, dict):
+        section = cfg.get(kind)
+        if isinstance(section, dict):
+            payload.update(section)
+        if isinstance(override_rows, list) and override_rows and "anti_patterns" not in (section or {}):
+            payload["anti_patterns"] = [str(t) for t in override_rows if str(t).strip()]
+        if kind == "review" and core_tone and not payload.get("system_constraints"):
+            payload["system_constraints"] = [core_tone]
+    return payload
+# <<< project-route-override (shikong) <<<
+
+
 def persist_story_seed(
     project_root: Path,
     master_payload: Dict[str, Any],
@@ -182,6 +237,8 @@ def persist_story_seed(
     paths = StoryContractPaths.from_project_root(project_root)
     paths.root.mkdir(parents=True, exist_ok=True)
     paths.chapters_dir.mkdir(parents=True, exist_ok=True)
+    master_payload = _apply_project_route_override(paths.root, "master", master_payload)
+    anti_patterns = _apply_project_route_override(paths.root, "anti_patterns", anti_patterns)
     write_json(paths.master_json, master_payload)
     write_json(paths.anti_patterns_json, anti_patterns)
     write_marked_markdown(paths.master_json.with_suffix(".md"), render_master_markdown(master_payload))
@@ -208,5 +265,7 @@ def persist_runtime_contracts(
     volume = volume_num_for_chapter_from_state(paths.project_root, chapter) or 1
     paths.volumes_dir.mkdir(parents=True, exist_ok=True)
     paths.reviews_dir.mkdir(parents=True, exist_ok=True)
+    volume_brief = _apply_project_route_override(paths.root, "volume", volume_brief)
+    review_contract = _apply_project_route_override(paths.root, "review", review_contract)
     write_json(paths.volume_json(volume), volume_brief)
     write_json(paths.review_json(chapter), review_contract)

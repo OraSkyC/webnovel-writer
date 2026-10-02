@@ -74,6 +74,18 @@ def volume_num_for_chapter_from_state(project_root: Path, chapter_num: int) -> i
 
 
 def _find_split_outline_file(outline_dir: Path, chapter_num: int) -> Path | None:
+    """查找单章大纲（垫片）。
+
+    >>> shim-subdir-rglob (shikong) >>>
+    fork 内置行为（原先由「工具/安装插件垫片子目录补丁.py」在运行时给已安装插件打补丁，
+    现在合入 fork 源码，无需再跑补丁脚本）。
+
+    生成的「全局章号垫片」放在 ``大纲/垫片/卷N/`` 子目录下，好让大纲根目录只留作者手写的
+    卷级文件：
+        - 之前  大纲/第0001章-卷1第01章-序章·幽蓝脉冲.md   （几百个垫片铺满根目录）
+        - 之后  大纲/垫片/卷1/第0001章-卷1第01章-序章·幽蓝脉冲.md
+    因此改为 rglob 搜索；但保持「根目录优先」的原有优先级，手动放在根目录的同名文件仍优先。
+    """
     patterns = [
         f"第{chapter_num}章*.md",
         f"第{chapter_num:02d}章*.md",
@@ -81,9 +93,13 @@ def _find_split_outline_file(outline_dir: Path, chapter_num: int) -> Path | None
         f"第{chapter_num:04d}章*.md",
     ]
     for pattern in patterns:
-        matches = sorted(outline_dir.glob(pattern))
-        if matches:
-            return matches[0]
+        # 根目录优先（插件原行为），其次任意深度的子目录。
+        flat = sorted(outline_dir.glob(pattern))
+        if flat:
+            return flat[0]
+        nested = sorted(outline_dir.rglob(pattern))
+        if nested:
+            return nested[0]
     return None
 
 

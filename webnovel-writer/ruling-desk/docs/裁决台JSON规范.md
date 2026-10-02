@@ -1,5 +1,8 @@
 # 裁决台 JSON 规范
 
+> **规范版本 2.0**（独立于裁决台组件版本，见 `desk.json` 的 `spec_version`）。
+> 载荷形状不变而判定口径变了 ⇒ 只升组件版本，不动规范版本。
+
 > 适用于任何「**待办卡片 → 作者裁定 → 执行**」流程的裁决台，
 > 与具体书目无关。配套机器可校验文件：
 > `backend/pending.schema.json`、`backend/裁决.schema.json`
