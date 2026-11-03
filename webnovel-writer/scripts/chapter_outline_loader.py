@@ -114,7 +114,40 @@ def _find_volume_outline_file(project_root: Path, chapter_num: int) -> Path | No
     return next((path for path in candidates if path.exists()), None)
 
 
+_GENERIC_HEADING_RE = re.compile(r"^(#{1,6})\s+\S.*$", re.MULTILINE)
+
+
+def _chapter_section_by_heading(content: str, chapter_num: int) -> str | None:
+    """按通用章标题扫描取整章段落（`### 第63章 满室星光（…）` 这类无冒号写法也认）。
+
+    段落边界：下一个同级/更高级的章标题，或层级更浅的任意 Markdown 标题（如 `## 卷末备注`），
+    都没有就到文件尾。
+    """
+    matches = list(_CHAPTER_HEADING_RE.finditer(content))
+    for index, match in enumerate(matches):
+        if _parse_chinese_chapter_num(match.group(2)) != chapter_num:
+            continue
+        level = len(match.group(1))
+        end = len(content)
+        for nxt in matches[index + 1 :]:
+            if len(nxt.group(1)) <= level:
+                end = nxt.start()
+                break
+        for heading in _GENERIC_HEADING_RE.finditer(content):
+            if heading.start() <= match.end():
+                continue
+            if len(heading.group(1)) < level:
+                end = min(end, heading.start())
+                break
+        return content[match.start() : end].strip()
+    return None
+
+
 def _extract_outline_section(content: str, chapter_num: int) -> str | None:
+    # 先按通用章标题取段（真实书的写法多数不带冒号），取不到再回退老式冒号写法。
+    section = _chapter_section_by_heading(content, chapter_num)
+    if section is not None:
+        return section
     patterns = [
         rf"###\s*第\s*{chapter_num}\s*章[：:]\s*(.+?)(?=###\s*第\s*\d+\s*章|##\s|$)",
         rf"###\s*第{chapter_num}章[：:]\s*(.+?)(?=###\s*第\d+章|##\s|$)",
