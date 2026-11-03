@@ -20,18 +20,13 @@ from typing import Iterable, Optional
 
 from runtime_compat import normalize_windows_path
 
+import host_compat
+
 
 DEFAULT_PROJECT_DIR_NAMES: tuple[str, ...] = ("webnovel-project",)
-CURRENT_PROJECT_POINTER_REL: Path = Path(".claude") / ".webnovel-current-project"
 
-# 用户级全局映射（当 skills/agents 安装在 ~/.claude 时，项目目录可能在任意盘符）
-# 该文件用于在“空上下文 + CWD 不在项目内”的情况下仍能定位到正确 project_root。
-GLOBAL_REGISTRY_REL: Path = Path("webnovel-writer") / "workspaces.json"
-
-# Claude Code 常见环境变量（存在时优先作为“工作区根目录”提示）
-ENV_CLAUDE_PROJECT_DIR = "CLAUDE_PROJECT_DIR"
-ENV_CLAUDE_HOME = "CLAUDE_HOME"
-ENV_WEBNOVEL_CLAUDE_HOME = "WEBNOVEL_CLAUDE_HOME"
+# 宿主差异（用户级家目录、工作区指针目录、工作区根提示变量）统一收在 host_compat，
+# 本模块不再直接写死任何宿主的名字。
 
 
 def _find_git_root(cwd: Path) -> Optional[Path]:
@@ -60,17 +55,12 @@ def _normcase_path_key(p: Path) -> str:
 
 
 def _get_user_claude_root() -> Path:
-    raw = os.environ.get(ENV_WEBNOVEL_CLAUDE_HOME) or os.environ.get(ENV_CLAUDE_HOME)
-    if raw:
-        try:
-            return normalize_windows_path(raw).expanduser().resolve()
-        except Exception:
-            return normalize_windows_path(raw).expanduser()
-    return (Path.home() / ".claude").resolve()
+    """写入用的用户级宿主家目录（兼容旧函数名）。"""
+    return host_compat.agent_home()
 
 
 def _global_registry_path() -> Path:
-    return _get_user_claude_root() / GLOBAL_REGISTRY_REL
+    return host_compat.registry_path()
 
 
 def _default_registry() -> dict:
@@ -125,7 +115,7 @@ def _resolve_project_root_from_global_registry(
     从用户级 registry 中解析 project_root。
 
     安全策略：
-    - 优先使用 workspace_hint / CLAUDE_PROJECT_DIR 提示做匹配。
+    - 优先使用 workspace_hint / 宿主工作区提示（CLAUDE_PROJECT_DIR 等）做匹配。
     - 默认不使用 last_used 兜底，避免在“完全无上下文”时误命中错误项目。
     """
     reg_path = _global_registry_path()
@@ -134,10 +124,7 @@ def _resolve_project_root_from_global_registry(
     if not isinstance(workspaces, dict) or not workspaces:
         return None
 
-    hints: list[Path] = []
-    env_ws = os.environ.get(ENV_CLAUDE_PROJECT_DIR)
-    if env_ws:
-        hints.append(normalize_windows_path(env_ws).expanduser())
+    hints: list[Path] = list(host_compat.workspace_hints())
     if workspace_hint is not None:
         hints.append(workspace_hint)
     hints.append(base)
@@ -208,9 +195,9 @@ def update_global_registry_current_project(
 
     ws = workspace_root
     if ws is None:
-        env_ws = os.environ.get(ENV_CLAUDE_PROJECT_DIR)
-        if env_ws:
-            ws = normalize_windows_path(env_ws).expanduser()
+        hints = host_compat.workspace_hints()
+        if hints:
+            ws = hints[0]
     if ws is None:
         return None
 
@@ -255,10 +242,7 @@ def _is_project_root(path: Path) -> bool:
 
 def _pointer_candidates(cwd: Path, *, stop_at: Optional[Path] = None) -> Iterable[Path]:
     """Yield candidate pointer files from cwd up to parents (bounded by stop_at when provided)."""
-    for candidate in (cwd, *cwd.parents):
-        yield candidate / CURRENT_PROJECT_POINTER_REL
-        if stop_at is not None and candidate == stop_at:
-            break
+    return host_compat.pointer_read_paths(cwd, stop_at=stop_at)
 
 
 def _resolve_project_root_from_pointer(cwd: Path, *, stop_at: Optional[Path] = None) -> Optional[Path]:
@@ -267,7 +251,7 @@ def _resolve_project_root_from_pointer(cwd: Path, *, stop_at: Optional[Path] = N
 
     Pointer file format:
     - plain text absolute path, one line.
-    - relative path is also supported (resolved relative to pointer's `.claude/` dir).
+    - relative path is also supported (resolved relative to the pointer's own host dir).
     """
     for pointer_file in _pointer_candidates(cwd, stop_at=stop_at):
         if not pointer_file.is_file():
@@ -299,10 +283,10 @@ def _resolve_unique_child_project_root(root: Path) -> Optional[Path]:
     return None
 
 
-def _find_workspace_root_with_claude(start: Path) -> Optional[Path]:
-    """Find nearest ancestor containing `.claude/`."""
+def _find_workspace_root_with_host_dir(start: Path) -> Optional[Path]:
+    """Find nearest ancestor containing a host dir (`.qoder/` or `.claude/`)."""
     for candidate in (start, *start.parents):
-        if (candidate / ".claude").is_dir():
+        if host_compat.workspace_dot_dir_exists(candidate):
             return candidate
     return None
 
@@ -311,31 +295,39 @@ def write_current_project_pointer(project_root: Path, *, workspace_root: Optiona
     """
     Write workspace-level current project pointer and return pointer file path.
 
-    If no workspace root with `.claude/` can be found, returns None (non-fatal).
+    If no workspace root with a host dir can be found, returns None (non-fatal).
     """
     root = normalize_windows_path(project_root).expanduser().resolve()
     if not _is_project_root(root):
         raise FileNotFoundError(f"Not a webnovel project root (missing .webnovel/state.json): {root}")
 
-    ws_root = Path(workspace_root).expanduser().resolve() if workspace_root else _find_workspace_root_with_claude(root)
+    ws_root = (
+        Path(workspace_root).expanduser().resolve()
+        if workspace_root
+        else _find_workspace_root_with_host_dir(root)
+    )
     if ws_root is None:
-        ws_root = _find_workspace_root_with_claude(Path.cwd().resolve())
+        ws_root = _find_workspace_root_with_host_dir(Path.cwd().resolve())
     if ws_root is None:
-        # 兜底：若无法找到 `.claude/`，将项目父目录视为“工作区”候选，
-        # 仅用于写入用户级 registry（不创建 `.claude/` 目录，不写 pointer 文件）。
+        # 兜底：若找不到任何宿主目录，将项目父目录视为“工作区”候选，
+        # 仅用于写入用户级 registry（不创建宿主目录，不写 pointer 文件）。
         ws_root = root.parent if root.parent != root else None
-    # 注意：ws_root 可能为 None（例如全局安装的 skills/agents，工作区内没有 `.claude/`）。
+    # 注意：ws_root 可能为 None（例如全局安装的 skills/agents，工作区内没有宿主目录）。
     # 这类情况仍然需要写入用户级 registry，以支持后续“空上下文”定位。
 
     pointer_file: Optional[Path] = None
     if ws_root is not None:
-        # 仅当工作区内已经存在 `.claude/` 时才写入指针，避免在任意目录下“凭空创建 .claude/”。
-        if (ws_root / ".claude").is_dir():
+        # 同步写入工作区内所有已存在的宿主目录，避免两个宿主跟着不同指针走；
+        # 宿主目录不存在时不创建。
+        written: list[Path] = []
+        for candidate in host_compat.pointer_write_paths(ws_root):
             try:
-                pointer_file = ws_root / CURRENT_PROJECT_POINTER_REL
-                pointer_file.write_text(str(root), encoding="utf-8")
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text(str(root), encoding="utf-8")
+                written.append(candidate)
             except Exception:
-                pointer_file = None
+                continue
+        pointer_file = written[0] if written else None
 
     # best-effort 更新用户级 registry（不阻断）
     try:
@@ -405,9 +397,9 @@ def resolve_project_root(explicit_project_root: Optional[str] = None, *, cwd: Op
         return pointer_root
 
     # 用户级 registry fallback（仅在“有上下文提示”时启用，避免误命中）
-    # - 若 CLAUDE_PROJECT_DIR 存在：认为 Claude Code 提供了工作区上下文
+    # - 若宿主导出了工作区根提示：认为宿主提供了上下文
     # - 否则仅在 base 位于某个已记录 workspace 内时启用（前缀匹配）
-    allow_last_used = bool(os.environ.get(ENV_CLAUDE_PROJECT_DIR))
+    allow_last_used = bool(host_compat.workspace_hints())
     reg_root = _resolve_project_root_from_global_registry(
         base,
         workspace_hint=None,

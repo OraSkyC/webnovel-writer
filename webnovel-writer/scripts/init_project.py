@@ -270,8 +270,9 @@ def init_project(
     cultivation_subtiers: str = "",
 ) -> None:
     project_path = Path(project_dir).expanduser().resolve()
-    if ".claude" in project_path.parts:
-        raise SystemExit("Refusing to initialize a project inside .claude. Choose a different directory.")
+    for host_dir in (".claude", ".qoder"):
+        if host_dir in project_path.parts:
+            raise SystemExit(f"Refusing to initialize a project inside {host_dir}. Choose a different directory.")
     genre = _validate_initial_genre_source(genre)
     genre_resolution = resolve_genre_input(genre)
     canonical_genre = genre_resolution.canonical_genre or genre

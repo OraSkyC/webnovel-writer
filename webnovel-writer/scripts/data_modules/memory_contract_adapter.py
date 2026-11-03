@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from .chapter_commit_service import ChapterCommitService
 from .commit_artifacts import extraction_list
 from .config import DataModulesConfig, get_config
+import host_compat
 from .memory_contract import (
     CommitResult,
     ContextPack,
@@ -243,7 +244,7 @@ class MemoryContractAdapter:
                     or ""
                 ).strip()
             if genre:
-                profile_path = self.config.project_root / ".claude" / "references" / "genre-profiles.md"
+                profile_path = host_compat.host_reference_path(self.config.project_root, "genre-profiles.md")
                 if profile_path.exists():
                     profile_text = profile_path.read_text(encoding="utf-8")
                     excerpt = extract_genre_section(profile_text, genre)

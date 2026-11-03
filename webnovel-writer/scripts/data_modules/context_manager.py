@@ -14,6 +14,8 @@ from pathlib import Path
 from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
+import host_compat
+
 try:
     from chapter_outline_loader import (
         load_chapter_outline,
@@ -334,8 +336,8 @@ class ContextManager:
         primary_genre = genres[0]
         secondary_genres = genres[1:]
         composite = len(genres) > 1
-        profile_path = self.config.project_root / ".claude" / "references" / "genre-profiles.md"
-        taxonomy_path = self.config.project_root / ".claude" / "references" / "reading-power-taxonomy.md"
+        profile_path = host_compat.host_reference_path(self.config.project_root, "genre-profiles.md")
+        taxonomy_path = host_compat.host_reference_path(self.config.project_root, "reading-power-taxonomy.md")
 
         profile_text = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
         taxonomy_text = taxonomy_path.read_text(encoding="utf-8") if taxonomy_path.exists() else ""

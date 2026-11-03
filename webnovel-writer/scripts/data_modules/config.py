@@ -15,16 +15,13 @@ from typing import Optional
 
 from runtime_compat import normalize_windows_path
 
+import host_compat
+
 from .context_weights import TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT
 
 def _get_user_claude_root() -> Path:
-    raw = os.environ.get("WEBNOVEL_CLAUDE_HOME") or os.environ.get("CLAUDE_HOME")
-    if raw:
-        try:
-            return normalize_windows_path(raw).expanduser().resolve()
-        except Exception:
-            return normalize_windows_path(raw).expanduser()
-    return (Path.home() / ".claude").resolve()
+    """写入用的用户级宿主家目录（宿主差异收在 host_compat，兼容旧函数名）。"""
+    return host_compat.agent_home()
 
 
 def _load_dotenv_file(env_path: Path, *, override: bool = False) -> bool:
@@ -54,14 +51,16 @@ def _load_dotenv():
 
     约定：
     - 项目级 `.env`（当前工作目录下）优先；
-    - 全局 `.env` 作为兜底：`~/.claude/webnovel-writer/.env`
+    - 全局 `.env` 作为兜底：宿主家目录下的 `webnovel-writer/.env`（`~/.qoder-cn`、`~/.claude`）
     """
     # 1) 当前目录（常见：用户从项目根目录执行）
     _load_dotenv_file(Path.cwd() / ".env", override=False)
 
     # 2) 用户级全局（常见：skills/agents 全局安装，API key 放这里最省心）
-    global_env = _get_user_claude_root() / "webnovel-writer" / ".env"
-    _load_dotenv_file(global_env, override=False)
+    #    每个宿主家（~/.qoder-cn、~/.claude）下的 webnovel-writer/.env 都读；
+    #    _load_dotenv_file 不覆盖已有变量，所以先读到的宿主优先。
+    for global_env in host_compat.existing_global_dotenv_paths():
+        _load_dotenv_file(global_env, override=False)
 
 
 def _load_project_dotenv(project_root: Path) -> None:
