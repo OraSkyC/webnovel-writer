@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import asdict
 from typing import Any, Dict, List
 
 from ..commit_artifacts import extraction_list
@@ -56,6 +57,34 @@ class MemoryWriter:
 
         subject = str(event.get("subject") or "").strip()
         return subject
+
+    def _retire_open_loop(self, content: str, chapter: int, stats: Dict[str, Any]) -> None:
+        """同 subject 的活跃伏笔改为 outdated，并在 payload 记下 resolved 与回收章。
+
+        顶层 status 不能写 resolved：VALID_STATUSES 不含它，normalized() 会打回 active。
+        """
+        for row in self.store.query(category="open_loop", subject=content, status="active"):
+            closed = MemoryItem(
+                **{
+                    **asdict(row),
+                    "status": "outdated",
+                    "payload": {
+                        **(row.payload or {}),
+                        "status": "resolved",
+                        "resolved_chapter": int(chapter),
+                    },
+                    "updated_at": "",
+                }
+            )
+            self._upsert(closed, stats)
+
+    def _planting_already_closed(self, content: str, chapter: int) -> bool:
+        """重放埋设章时，不要把已经关闭的同一条目重新写成 active。"""
+        item_id = self._item_id("open_loop", content, "status", chapter)
+        for item in self.store.query(category="open_loop", subject=content, status=None):
+            if item.id == item_id and item.status == "outdated":
+                return True
+        return False
 
     def update_from_chapter_result(self, chapter: int, result: Dict[str, Any]) -> Dict[str, Any]:
         stats: Dict[str, Any] = {
@@ -226,11 +255,17 @@ class MemoryWriter:
             self._upsert(item, stats)
 
         open_loops = memory_facts.get("open_loops") or []
+        pending_closes: List[str] = []
         for row in open_loops:
             if not isinstance(row, dict):
                 continue
             content = str(row.get("content", "") or "").strip()
             if not content:
+                continue
+            if row.get("close"):
+                pending_closes.append(content)
+                continue
+            if self._planting_already_closed(content, chapter):
                 continue
             item = MemoryItem(
                 id=self._item_id("open_loop", content, "status", chapter),
@@ -249,6 +284,8 @@ class MemoryWriter:
                 evidence=[f"memory_facts:open_loop:{chapter}"],
             )
             self._upsert(item, stats)
+        for content in pending_closes:
+            self._retire_open_loop(content, chapter, stats)
 
         reader_promises = memory_facts.get("reader_promises") or []
         for row in reader_promises:
@@ -326,6 +363,10 @@ class MemoryWriter:
                             ),
                         }
                     )
+            elif event_type == "open_loop_closed":
+                content = self._coerce_loop_content(payload, event)
+                if content:
+                    memory_facts["open_loops"].append({"content": content, "close": True})
             elif event_type in {"promise_created", "promise_paid_off"}:
                 content = str(
                     payload.get("content")
