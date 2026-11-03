@@ -5,7 +5,7 @@
 本分支保留 Claude Code 版（v6），安装方式与 v8 不同。
 
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-6.2.1-brightgreen.svg)](.claude-plugin/marketplace.json)
+[![Version](https://img.shields.io/badge/version-6.4.0-brightgreen.svg)](.claude-plugin/marketplace.json)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-purple.svg)](https://claude.ai/claude-code)
 [![Marketplace](https://img.shields.io/badge/Claude%20Code-Marketplace-black.svg)](.claude-plugin/marketplace.json)
@@ -374,7 +374,8 @@ git push origin feature/your-feature
 
 | 版本 | 主要变化 |
 |------|----------|
-| **v6.2.1 (当前)** | 修复 Windows 写章提交偶发的拒绝访问（WinError 5）：资料文件被短暂占用时自动重试 |
+| **v6.4.0 (当前)** | fork 6.4.0：prose-lint 随包（11 条排版红线可执行）；路由覆盖、章号垫片、章纲抽取转为内置；裁决台拆为独立插件 cadt-ruling；新增 Qoder 宿主产物生成器与宿主中性定位层 |
+| **v6.2.1** | 修复 Windows 写章提交偶发的拒绝访问（WinError 5）：资料文件被短暂占用时自动重试 |
 | **v6.2.0** | 写章结果更清楚，失败后更好恢复 |
 | **v6.1.0** | 插件运行时加固：新增 doctor/project-status/write-gate/projection 重放、hooks、行为 eval 与发布校验 |
 | **v6.0.0** | Story System 全链路上线（合同种子 + 运行时合同 + 章节提交 + 事件审计），补齐集成测试 |
