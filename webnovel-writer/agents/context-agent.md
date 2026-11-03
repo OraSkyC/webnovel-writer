@@ -35,6 +35,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 
 load-context 已含（不要重复查）：`story_contracts`（MASTER/volume/chapter/review）、`recent_summaries`、`urgent_loops`、`active_rules`、`protagonist`、`memory_pack`（追读力）、`genre_profile_excerpt`、`author_style_patterns`（/webnovel-learn 累积的作者文风修正）、`style_contract`（设定集/风格契约）。只有返回空 contracts 时才直接 Read `.story-system/*.json`。
 
+🔴 后三节不是恒定存在，缺时整节不出现（不是空值）：`genre_profile_excerpt` 依赖项目内的题材档案副本，`author_style_patterns` 依赖 /webnovel-learn 攒过记录，`style_contract` 依赖设定集里有风格契约。新书或没跑过 learn 的项目大概率三节全缺——此时改读项目根的写作规范/风格契约文件（文件名各书不同，用 Grep 定位），并在任务书里注明降级，**不要按「已含」跳过这层**。
+
 裁决层（chapter 合同的 `reasoning` 对象）：`style_priority`、`pacing_strategy`、`genre`，必须在第 4 段消费。`chapter_focus` / `dynamic_context` 等 CSV 派生项仅作写法参考，不得覆盖章纲与 `chapter_directive.goal` 约束。
 
 ## 3. 执行流程
@@ -91,7 +93,7 @@ load-context 已含（不要重复查）：`story_contracts`（MASTER/volume/cha
 
 | 场景 | 处理 |
 |------|------|
-| load-context 返回空 | 降级为 `extract-context --chapter {NNNN} --format json` |
+| load-context 返回空 | 降级为顶层入口：`python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" extract-context --chapter {NNNN} --format json`（不是 memory-contract 的子命令，走错模块会报 invalid choice） |
 | contracts 缺失 | 标明 legacy fallback |
 | chapter_meta 缺失 | 跳过"接住上章" |
 | 伏笔数据缺失 | 标注"需人工补录"，不静默跳过 |
