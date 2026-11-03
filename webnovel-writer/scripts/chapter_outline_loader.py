@@ -273,6 +273,20 @@ _DIRECTIVE_FIELD_MAP = {
 _DIRECTIVE_LIST_FIELDS = {"cpns", "must_cover_nodes", "forbidden_zones", "key_entities"}
 
 
+_BOLD_LABEL_RE = re.compile(r"^\*\*\s*(.+?)\s*\*\*\s*([：:].*)$")
+
+
+def _unbold_label(text: str) -> str:
+    """`**CBN**：值` → `CBN：值`。只剥标签段的粗体，值里的粗体原样保留（那是作者给下游看的强调）。"""
+    match = _BOLD_LABEL_RE.match(text)
+    return (match.group(1) + match.group(2)) if match else text
+
+
+def _match_field_label(cleaned: str, label: str) -> re.Match | None:
+    """字段标签匹配的唯一口径：兼容 `- CBN：` 与 `- **CBN**：` 两种真实写法。"""
+    return re.match(rf"^{re.escape(label)}\s*[：:]\s*(.*)$", _unbold_label(cleaned), re.IGNORECASE)
+
+
 def _clean_plot_line(line: str) -> str:
     text = str(line or "").strip()
     text = re.sub(r"^[\-\*•]+\s*", "", text)
@@ -343,7 +357,7 @@ def parse_chapter_plot_structure(outline_text: str) -> Dict[str, Any]:
         matched_field = ""
         matched_value = ""
         for label, field in _PLOT_SECTION_FIELD_MAP.items():
-            match = re.match(rf"^{re.escape(label)}\s*[：:]\s*(.*)$", cleaned, re.IGNORECASE)
+            match = _match_field_label(cleaned, label)
             if match:
                 matched_field = field
                 matched_value = match.group(1).strip()
@@ -398,7 +412,7 @@ def parse_chapter_execution_directive(outline_text: str) -> Dict[str, Any]:
         matched_field = ""
         matched_value = ""
         for label, field in _DIRECTIVE_FIELD_MAP.items():
-            match = re.match(rf"^{re.escape(label)}\s*[：:]\s*(.*)$", cleaned, re.IGNORECASE)
+            match = _match_field_label(cleaned, label)
             if match:
                 matched_field = field
                 matched_value = match.group(1).strip()

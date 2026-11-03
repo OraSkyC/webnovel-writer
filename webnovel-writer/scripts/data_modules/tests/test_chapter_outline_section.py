@@ -6,13 +6,19 @@
 `### 第63章 满室星光（完整章纲，2026-09-13 立）`、`### 第39章 烈日朝晖 ✅已完成`
 这类无冒号标题 → 整本书的章纲静默读不到，plot_structure 连带为空。
 本文件锁住「无冒号也要认」以及段落边界，防止再退回旧写法。
+第二层坑一并锁住：字段标签写成粗体（`- **CBN**：`）时，plot_structure 与 execution_directive
+不能返回空——章纲读到了但结构化字段全空，等于主链仍然拿不到节点与禁区。
 """
 
 from __future__ import annotations
 
 import json
 
-from chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
+from chapter_outline_loader import (
+    load_chapter_execution_directive,
+    load_chapter_outline,
+    load_chapter_plot_structure,
+)
 
 
 def _project(tmp_path, body: str, chapters_range: str = "1-100"):
@@ -147,3 +153,48 @@ def test_plot_structure_populated_from_no_colon_outline(tmp_path):
 
     assert structure.get("mandatory_nodes"), structure
     assert structure.get("prohibitions"), structure
+
+
+def test_plot_structure_reads_bold_labels(tmp_path):
+    """真实章纲把标签写成粗体 `- **CBN**：`，结构化字段不能因此为空。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第63章 满室星光（完整章纲）",
+                "- **CBN**：沈星辰 | 零点灯亮 | 他被接住",
+                "- **必须覆盖节点**：CBN + CPN3 + CPN6",
+                "- **本章禁区**：不写病发、不送医",
+                "",
+            ]
+        ),
+    )
+
+    structure = load_chapter_plot_structure(root, 63)
+
+    assert structure.get("cbn") == "沈星辰 | 零点灯亮 | 他被接住", structure
+    # 节点按顿号/逗号/分号拆，`+` 不是分隔符（章纲用它表示「CBN 加若干 CPN」的组合）
+    assert structure.get("mandatory_nodes") == ["CBN + CPN3 + CPN6"], structure
+    assert structure.get("prohibitions"), structure
+
+
+def test_directive_reads_bold_labels_and_keeps_value_emphasis(tmp_path):
+    """执行指令同理；值内部的粗体是作者留的强调，不能被剥掉。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第63章 满室星光",
+                "- **目标**：零点惊喜",
+                "- **时间锚点**：2059/11/15 22:30→11/16 0:30（**章首不重标日期行**）",
+                "- **倒计时状态**：D-134（不写明数字）",
+                "",
+            ]
+        ),
+    )
+
+    directive = load_chapter_execution_directive(root, 63)
+
+    assert directive.get("goal") == "零点惊喜", directive
+    assert "**章首不重标日期行**" in directive.get("time_anchor", ""), directive
+    assert "D-134" in directive.get("countdown", ""), directive
