@@ -165,7 +165,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rev
 装了才有；没装就退回 AskUserQuestion 三选项）。它会起自己的服务、给出 `http://127.0.0.1:<port>`、
 自带卡校验门，并把裁定落盘；把地址告诉用户，等他在浏览器里逐条裁定。
 **不要**替他猜裁定，也不要把证据摘要成聊天里的三选项——台子上有完整证据与候选解。
-裁定完成后用 `Agent` 工具起 `ruling-executor` 施工，最后**原样重跑 Step 5.2 的 chapter-commit 命令**
+裁定完成后用 `Agent` 工具起 `ruling-executor` 施工，最后**原样重跑 Step 5.2 的提交命令**
 （pending 清空即 accepted）。本技能不引用裁决台的任何文件路径——它在另一个插件里。
 
 `--minimal` 不调用 reviewer 与 `review-pipeline`，但必须**覆盖写入**本章新的 no-review `review_results.json`（禁止复用旧 artifact），使 Step 5 提交链有有效 `--review-result`（成功标准“审查已落库”对 `--minimal` 的豁免仍成立）：

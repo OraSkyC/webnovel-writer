@@ -48,16 +48,18 @@ SUBAGENT_PROMPT_FILES = (
     "deconstruction-agent.md",
 )
 
-# webnovel.py 注册的子命令（从 add_parser 提取）
-REGISTERED_CLI_SUBCOMMANDS = {
-    "where", "preflight", "project-status", "doctor", "write-gate", "projections", "user-report",
-    "run-ledger", "run-log", "use",
-    "index", "state", "rag", "style", "entity", "context", "memory",
-    "migrate", "status", "update-state", "backup", "archive",
-    "init", "extract-context", "memory-contract", "project-memory", "review-pipeline",
-    "placeholder-scan", "master-outline-sync",
-    "story-system", "chapter-commit", "story-events", "knowledge",
-}
+# webnovel.py 顶层子命令：从 CLI 真源派生，测试里不维护副本（新增子命令不会漏登记）。
+# 只认 `sub.add_parser("x")`，二级子命令不作为顶层入口。
+_CLI_SOURCE_PATH = SCRIPTS_DIR / "data_modules" / "webnovel.py"
+REGISTERED_CLI_SUBCOMMANDS = set(
+    re.findall(
+        r'\bsub\.add_parser\(\s*"([a-z][\w-]*)"',
+        _CLI_SOURCE_PATH.read_text(encoding="utf-8"),
+    )
+)
+assert "chapter-commit" in REGISTERED_CLI_SUBCOMMANDS, (
+    f"CLI 子命令派生失败：{_CLI_SOURCE_PATH} 未匹配到顶层 add_parser 注册点（守卫会假绿）"
+)
 
 
 # ---------------------------------------------------------------------------
