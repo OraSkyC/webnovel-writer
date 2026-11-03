@@ -8,6 +8,8 @@
 本文件锁住「无冒号也要认」以及段落边界，防止再退回旧写法。
 第二层坑一并锁住：字段标签写成粗体（`- **CBN**：`）时，plot_structure 与 execution_directive
 不能返回空——章纲读到了但结构化字段全空，等于主链仍然拿不到节点与禁区。
+第三层坑：字段表外的顶格标签行（`- **爽点**：…`）必须终结上一字段的续行，
+但缩进编号条目（`  1. 深夜独等：…`）里的冒号不算标签行，否则 CPN 会被拆断。
 """
 
 from __future__ import annotations
@@ -198,3 +200,72 @@ def test_directive_reads_bold_labels_and_keeps_value_emphasis(tmp_path):
     assert directive.get("goal") == "零点惊喜", directive
     assert "**章首不重标日期行**" in directive.get("time_anchor", ""), directive
     assert "D-134" in directive.get("countdown", ""), directive
+
+
+def test_unmapped_field_line_ends_previous_field(tmp_path):
+    """字段表外的顶格标签行（爽点/Strand/本章变化…）不能被当作续行并进上一字段。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第63章 满室星光",
+                "- **必须覆盖节点**：CBN + CPN3 + CPN6",
+                "- **爽点**：零点反转；跑调生日歌",
+                "- **Strand**：主线情感线",
+                "- **本章变化**：十八年第一次被正式庆祝",
+                "- **本章禁区**：不写病发、不送医",
+                "",
+            ]
+        ),
+    )
+
+    structure = load_chapter_plot_structure(root, 63)
+
+    assert structure.get("mandatory_nodes") == ["CBN + CPN3 + CPN6"], structure
+    assert not any("爽点" in item for item in structure.get("mandatory_nodes") or []), structure
+    assert structure.get("prohibitions") == ["不写病发", "不送医"], structure
+
+
+def test_indented_numbered_items_stay_with_their_field(tmp_path):
+    """缩进编号条目是上一字段的续行：里面的冒号不能触发「新字段」判定。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第63章 满室星光",
+                "- **CPNs**：",
+                "  1. 深夜独等：群里通知完七点就安静了",
+                "  2. 零点：秒针跨过十二，什么也没发生",
+                "- **CEN**：原来有人当真了",
+                "",
+            ]
+        ),
+    )
+
+    structure = load_chapter_plot_structure(root, 63)
+
+    assert structure.get("cpns") == [
+        "深夜独等：群里通知完七点就安静了",
+        "零点：秒针跨过十二，什么也没发生",
+    ], structure
+    assert structure.get("cen") == "原来有人当真了", structure
+
+
+def test_directive_unmapped_field_does_not_pollute_list(tmp_path):
+    """directive 走的是同一判定：字段表外的标签行不并入 must_cover_nodes。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第63章 满室星光",
+                "- **必须覆盖节点**：CBN + CPN5",
+                "- **爽点**：她把最大一块蛋糕换给他",
+                "",
+            ]
+        ),
+    )
+
+    directive = load_chapter_execution_directive(root, 63)
+
+    assert directive.get("must_cover_nodes") == ["CBN + CPN5"], directive
+    assert not any("爽点" in item for item in directive.get("must_cover_nodes") or []), directive

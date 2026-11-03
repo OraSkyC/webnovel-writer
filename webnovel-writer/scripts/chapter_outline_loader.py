@@ -294,6 +294,27 @@ def _clean_plot_line(line: str) -> str:
     return text.strip()
 
 
+_FIELD_LABEL_SHAPE_RE = re.compile(r"^[^：:。；]{1,24}[：:]")
+_BULLET_RE = re.compile(r"^[\-\*•]+\s*")
+
+
+def _starts_new_field(raw_line: str, cleaned: str) -> bool:
+    """判断这行是不是「另一个字段的标题行」（用于结束上一个字段的续行）。
+
+    判据两条，缺一不可：
+    1. 顶格——缩进行是上一字段的编号续行（如 `  1. 深夜独等：群里通知完七点`），不能当新字段；
+    2. 剥掉列表符号与标签段粗体后，形如「短标签 + 冒号」。
+
+    字段表里没有的标签（爽点/Strand/关键实体/本章变化…）据此终结上一字段，
+    否则它们会被当作续行并进 `必须覆盖节点`／`本章禁区`，污染下游合同。
+    """
+    if raw_line[:1] in (" ", "\t"):
+        return False
+    if not _BULLET_RE.match(raw_line.strip()):
+        return False
+    return bool(_FIELD_LABEL_SHAPE_RE.match(_unbold_label(cleaned)))
+
+
 def _append_plot_value(target: Dict[str, Any], field: str, value: str) -> None:
     value = _clean_plot_line(value)
     if not value:
@@ -368,6 +389,10 @@ def parse_chapter_plot_structure(outline_text: str) -> Dict[str, Any]:
             _append_plot_value(structure, matched_field, matched_value)
             continue
 
+        if _starts_new_field(raw_line, cleaned):
+            current_field = ""
+            continue
+
         if current_field:
             _append_plot_value(structure, current_field, cleaned)
 
@@ -421,6 +446,9 @@ def parse_chapter_execution_directive(outline_text: str) -> Dict[str, Any]:
         if matched_field:
             current_field = matched_field
             _append_directive_value(directive, matched_field, matched_value)
+            continue
+        if _starts_new_field(raw_line, cleaned):
+            current_field = ""
             continue
         if current_field:
             _append_directive_value(directive, current_field, cleaned)
