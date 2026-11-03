@@ -24,6 +24,19 @@ def _tmp_root() -> Path:
     return root
 
 
+# 每测试目录名里的测试名上限：整条路径要在 Windows 260 字符预算内。
+# 长测试名（如 test_webnovel_skill_flow_runs_story_contract_context_and_review_pipeline_…）
+# 原本整名拼进目录，加上仓库路径与内层 .story-system/reviews/ 后到 261 字符，
+# 写评审合同的临时文件直接 FileNotFoundError。目录只用于人排查，截断不丢信息。
+_TEST_DIR_NAME_MAX = 48
+
+
+def _test_dir_name(node_name: str) -> str:
+    """截断测试名 + 短随机后缀，保证总路径在 Windows MAX_PATH 预算内。"""
+    safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in node_name)
+    return f"{safe_name[:_TEST_DIR_NAME_MAX]}_{uuid.uuid4().hex[:12]}"
+
+
 def _safe_mkdtemp(suffix: str | None = None, prefix: str | None = None, dir: str | os.PathLike[str] | None = None) -> str:
     """Avoid WindowsApps Python creating inaccessible 0o700 temp dirs."""
     suffix = "" if suffix is None else suffix
@@ -83,8 +96,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture
 def tmp_path(request: pytest.FixtureRequest) -> Path:
-    safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in request.node.name)
-    path = _tmp_root() / f"{safe_name}_{uuid.uuid4().hex}"
+    path = _tmp_root() / _test_dir_name(request.node.name)
     path.mkdir(parents=True, exist_ok=False)
     try:
         yield path
