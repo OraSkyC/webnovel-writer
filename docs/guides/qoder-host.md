@@ -43,6 +43,9 @@ python -X utf8 webnovel-writer/scripts/generate_qoder_artifacts.py
 
 # 只想先看转换结果、不碰用户目录
 python -X utf8 webnovel-writer/scripts/generate_qoder_artifacts.py --out D:/tmp/wn-qoder
+
+# 兄弟插件（裁决台）走同一条规则，规范名由它自己的 agents/name-map.json 决定
+python -X utf8 webnovel-writer/scripts/generate_qoder_artifacts.py --plugin-root <cadt-ruling 路径>
 ```
 
 装完在 Qoder 里直接可用：`/webnovel-init`、`/webnovel-plan`、`/webnovel-write`、`/webnovel-review`、
@@ -111,15 +114,29 @@ python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --remove   # 只�
 - **待裁计数改真口径**：原先数 `commits` 目录里的文件总数（等于每章提交都算待裁，61/726 这种数没有信息量），
   现在只数 `meta.status == rejected` 或 `disambiguation_result.pending` 非空的章。
 
+## 宿主加载语义（实测，含一条否定结果）
+
+| 组件 | 装完是否立刻可用 | 实测依据 |
+|------|------------------|----------|
+| 技能（`<host>/skills/*/SKILL.md`） | **是**，当场进可用技能列表 | 装完 8 个 `webnovel-*` 与 9 个 `cadt-ruling-*` 后，本会话技能列表即时出现 |
+| agent（`<host>/agents/<组>/*.md`） | **否，要重启 Qoder** | `list_agents` 立刻显示 4 个 `webnovel-*` 与 2 个 `cadt-ruling-*` 且 `enabled/ready`；但用新会话（`create_chat_session`，同一 Qoder 进程内）探针调用 `Agent(subagent_type="webnovel-reviewer")` 仍报 `Unknown agent type`，可用列表只有 general-purpose / Explore / Plan / 三个【示例】agent |
+
+结论要点：**Agent 工具的类型表是应用进程级快照，新开会话不算刷新**。名字、UUID、`组/名` 三种写法都不认。
+`list_agents` 的 `ready` 只证明磁盘上的定义被登记，不证明当前进程能调用它。
+
+重启前的替代做法（已实测可用）：用 `general-purpose` 承载 agent 定义文件，让它在第一步 Read
+`~/.qoder-cn/agents/webnovel/webnovel-reviewer.md` 并把它当角色规范执行——内容链（路径约定、
+runtime 命令、输出格式）能完整验通，只是不走原生注册名。
+
 ## 未做与边界
 
 | 项 | 状态 | 替代做法 |
 |----|------|----------|
 | Hooks（`session_start.py` 开场状态、`guard_runtime_write.py` 写入拦截） | 已装到用户级 settings.json，**生效需重启**；stdin 字段名待首次实测（探针已就位） | 手工替代：`webnovel.py preflight` / `project-status --format summary`；写入保护本来也在 runtime 侧 `write-gate` 与 `chapter-commit` 门禁里 |
-| 裁决台 `/cadt-ruling`（另一个插件） | Qoder 侧未装 | 写章技能在待裁卡出现时按源里的分支退回 `AskUserQuestion`；需要台子逐条裁时把 `cadt-ruling` 也走一遍同样的生成流程 |
+| 裁决台 `/cadt-ruling`（另一个插件） | 已生成 9 技能 + 2 agent（`--plugin-root ../cadt-ruling`），技能当场可用；**agent 调用要重启** | 未重启前写章技能会按源里的分支退回 `AskUserQuestion` |
 | Dashboard | 可用 | `/webnovel-dashboard` 起的是本地只读服务，与宿主无关 |
-| 全量 pytest 在本仓库路径下 | 1 例失败 | `test_webnovel_skill_flow_..._stubbed_vector_model` 的临时文件全路径 261 字符撞 Windows 260 上限；同一 commit 在短路径（如 `D:\wnx`）通过。要么把 checkout 放短路径，要么改 `scripts/conftest.py` 的 basetemp 位置 |
-| 覆盖率门槛 90% | 87.3% | 缺口主要在 `prose_lint.py` 与几个投影写手，属 fork 自带欠账，合并前后一致 |
+| 全量 pytest 在深路径 checkout 下 | 已修 | `conftest.py` 的每测试目录名改为「测试名截断 48 字符 + 12 位随机后缀」，临时文件全路径回到预算内；`.tmp/pytest` 这个仓库内根保持不变（它存在的理由是避开 WindowsApps Python 的 0o700 临时目录） |
+| 覆盖率门槛 90% | 已达标（90.02%，`pytest` 退出码 0） | 补了 prose-lint（0%→97%）、路由覆盖、doctor、断点账本四块测试；`rag_adapter`/`webnovel.py` CLI 分支仍是主要欠账 |
 
 ## 双宿主共存注意
 
