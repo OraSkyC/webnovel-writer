@@ -286,6 +286,59 @@ def test_probe_stays_silent_by_default(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 3.5 命令必须能被宿主的 bash 跑起来（配错 = 护栏静默放行）
+# ---------------------------------------------------------------------------
+
+def test_command_is_bash_safe(tmp_path):
+    """宿主用 bash 执行 command：Windows 反斜杠路径会被当转义吃掉，退出码 127 后宿主继续执行。
+
+    实测踩过：裸写 C:\\Users\\...\\python.exe 变成 C:Users...python.exe command not found。
+    所以每条命令要求：只出现正斜杠、每个路径段都带引号。
+    """
+    entries = installer.build_entries(python_executable=r"C:\Python313\python.exe", plugin_root=PLUGIN_ROOT)
+
+    for groups in entries.values():
+        for group in groups:
+            command = group["hooks"][0]["command"]
+            assert "\\" not in command, command
+            assert command.startswith('"'), command
+            assert f'"{PLUGIN_ROOT.as_posix()}/hooks/' in command, command
+
+
+def test_hook_shell_prefers_real_bash(monkeypatch, tmp_path):
+    monkeypatch.delenv("WEBNOVEL_HOOK_SHELL", raising=False)
+    shell = installer.hook_shell()
+    assert Path(shell).name.lower().startswith("bash"), shell
+
+    monkeypatch.setenv("WEBNOVEL_HOOK_SHELL", str(tmp_path / "my-bash.exe"))
+    assert installer.hook_shell() == str(tmp_path / "my-bash.exe")
+
+
+def test_verify_passes_for_real_plugin_root():
+    """端到端自检：三条命令真跑一遍，判定必须分别是 deny/deny/放行。
+
+    这是防 fail-open 的唯一手段——JSON 比对（--check）查不出「命令跑不起来」。
+    """
+    entries = installer.build_entries(python_executable=sys.executable, plugin_root=PLUGIN_ROOT)
+    settings = installer.merge_entries({}, entries)
+
+    problems = installer.verify(settings, cwd=PLUGIN_ROOT)
+
+    assert problems == [], problems
+
+
+def test_verify_flags_a_broken_command(tmp_path):
+    """把可执行文件换成不存在的 python，自检必须报出来（而不是静默通过）。"""
+    entries = installer.build_entries(python_executable=str(tmp_path / "no-such-python.exe"), plugin_root=PLUGIN_ROOT)
+    settings = installer.merge_entries({}, entries)
+
+    problems = installer.verify(settings, cwd=PLUGIN_ROOT)
+
+    assert len(problems) == 3, problems
+    assert any("退出码" in line for line in problems), problems
+
+
+# ---------------------------------------------------------------------------
 # 4. 开场钩子：非书项目必须完全静默，待裁计数只算真待裁
 # ---------------------------------------------------------------------------
 

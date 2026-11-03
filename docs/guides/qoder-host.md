@@ -91,13 +91,25 @@ python -X utf8 webnovel-writer/scripts/generate_qoder_artifacts.py --check
 Claude 侧那两个钩子脚本装的是同一份文件（不复制、不改逻辑），注册走独立脚本：
 
 ```bash
-python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py            # 安装/更新（自动留备份）
-python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --check    # 漂移核对，非零退出
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py            # 安装/更新（自动留备份 + 自检）
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --check    # 只比对 JSON（有漂移非零退出）
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --verify   # 只重跑实执行自检
 python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --remove   # 只摘本插件条目
 ```
 
-写进 `<host>/settings.json` 的 `hooks` 键，形状与 Qoder 自带插件的 `hooks/hooks.json` 一致
-（`SessionStart` / `PreToolUse` + `matcher` + `{"type":"command","name","command","timeout"}`）。
+🔴 **钩子配错是静默失效，不是报错**。宿主对 PreToolUse 的非零退出是「记录告警后继续执行」：
+命令拼错（实测裸写 `C:\...\python.exe` 被 bash 吃掉反斜杠 → 退出码 127）等于**根本没拦**。
+所以光有 `--check` 不够，安装时会自动跑 `verify`：用**宿主同款 shell**（优先 `C:\Program Files\Git\bin\bash.exe`，
+可用 `WEBNOVEL_HOOK_SHELL` 指定）喂合成载荷，要求两条护栏都返回退出码 2、开场钩子返回 0；
+命令里所有路径都必须加引号且只用正斜杠（有守卫测试钉住）。
+
+自检的坑也记一笔：PATH 上先命中的 bash 可能不是宿主那个，会把三条命令全误报成退出码 1；
+子进程输出编码不统一时，按字节读再容错解码，别让解码异常冒充钩子失败。
+
+已实测生效的证据（重启 Qoder 后）：本会话真的拦下了一次含 `.webnovel/index.db` 的 Bash 调用，
+返回的就是护栏自己的提示原文；宿主日志里 `SessionStart:startup` 执行 12 次、
+`PreToolUse:Bash source="user" success=true` 若干次。
+
 合并只动带 `webnovel-writer-` 前缀 `name` 的条目，其它键与其它宿主编排的钩子原样保留；
 换插件根或解释器路径会报漂移（防止 settings 里留着旧安装位置）。
 
@@ -119,20 +131,20 @@ python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --remove   # 只�
 | 组件 | 装完是否立刻可用 | 实测依据 |
 |------|------------------|----------|
 | 技能（`<host>/skills/*/SKILL.md`） | **是**，当场进可用技能列表 | 装完 8 个 `webnovel-*` 与 9 个 `cadt-ruling-*` 后，本会话技能列表即时出现 |
-| agent（`<host>/agents/<组>/*.md`） | **否，要重启 Qoder** | `list_agents` 立刻显示 4 个 `webnovel-*` 与 2 个 `cadt-ruling-*` 且 `enabled/ready`；但用新会话（`create_chat_session`，同一 Qoder 进程内）探针调用 `Agent(subagent_type="webnovel-reviewer")` 仍报 `Unknown agent type`，可用列表只有 general-purpose / Explore / Plan / 三个【示例】agent |
+| agent（`<host>/agents/<组>/*.md`） | **否，要重启 Qoder**（重启后本会话实测可原生调用） | 重启前：`list_agents` 立刻显示 6 个 `webnovel-*` / `cadt-ruling-*` 且 `enabled/ready`，但新会话（`create_chat_session`，同一进程）探针调用仍报 `Unknown agent type`，列表只有 general-purpose / Explore / Plan / 三个【示例】agent。重启后：`Agent(subagent_type="webnovel-reviewer")` 成功调起，读正文与跑 runtime 命令都正常 |
 
-结论要点：**Agent 工具的类型表是应用进程级快照，新开会话不算刷新**。名字、UUID、`组/名` 三种写法都不认。
-`list_agents` 的 `ready` 只证明磁盘上的定义被登记，不证明当前进程能调用它。
+结论要点：**Agent 工具的类型表是应用进程级快照，重开会话不算刷新，必须重启 Qoder**。名字、UUID、`组/名`
+三种写法在重启前都不认。`list_agents` 的 `ready` 只证明磁盘定义被登记，不证明当前进程能调用它。
 
 重启前的替代做法（已实测可用）：用 `general-purpose` 承载 agent 定义文件，让它在第一步 Read
 `~/.qoder-cn/agents/webnovel/webnovel-reviewer.md` 并把它当角色规范执行——内容链（路径约定、
-runtime 命令、输出格式）能完整验通，只是不走原生注册名。
+runtime 命令、输出格式）当时就是靠这个验通的。
 
 ## 未做与边界
 
 | 项 | 状态 | 替代做法 |
 |----|------|----------|
-| Hooks（`session_start.py` 开场状态、`guard_runtime_write.py` 写入拦截） | 已装到用户级 settings.json，**生效需重启**；stdin 字段名待首次实测（探针已就位） | 手工替代：`webnovel.py preflight` / `project-status --format summary`；写入保护本来也在 runtime 侧 `write-gate` 与 `chapter-commit` 门禁里 |
+| Hooks（`session_start.py` 开场状态、`guard_runtime_write.py` 写入拦截） | **已实测生效**（重启后：护栏真的拦下一次受保护写入，宿主日志有 SessionStart 与 PreToolUse 执行记录） | 手工替代：`webnovel.py preflight` / `project-status --format summary`；写入保护本来也在 runtime 侧 `write-gate` 与 `chapter-commit` 门禁里 |
 | 裁决台 `/cadt-ruling`（另一个插件） | 已生成 9 技能 + 2 agent（`--plugin-root ../cadt-ruling`），技能当场可用；**agent 调用要重启** | 未重启前写章技能会按源里的分支退回 `AskUserQuestion` |
 | Dashboard | 可用 | `/webnovel-dashboard` 起的是本地只读服务，与宿主无关 |
 | 全量 pytest 在深路径 checkout 下 | 已修 | `conftest.py` 的每测试目录名改为「测试名截断 48 字符 + 12 位随机后缀」，临时文件全路径回到预算内；`.tmp/pytest` 这个仓库内根保持不变（它存在的理由是避开 WindowsApps Python 的 0o700 临时目录） |
