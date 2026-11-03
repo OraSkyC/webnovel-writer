@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -54,8 +55,9 @@ def test_no_claude_host_tokens_left(artifacts):
     _ensure_scripts_on_path()
     import generate_qoder_artifacts as module
 
+    forbidden = module.forbidden_tokens(module.resolve_plugin_config(module.PLUGIN_ROOT))
     dirty = {
-        rel: [token for token in module.FORBIDDEN_AFTER_TRANSFORM if token in text]
+        rel: [token for token in forbidden if token in text]
         for rel, text in artifacts.items()
     }
     dirty = {rel: hits for rel, hits in dirty.items() if hits}
@@ -124,3 +126,100 @@ def test_cli_subcommands_in_artifacts_are_registered(artifacts):
             if cmd not in registered:
                 offenders.append(f"{rel}:{cmd}")
     assert not offenders, f"产物引用了未注册子命令：{offenders}"
+
+
+# ---------------------------------------------------------------------------
+# 参数化：兄弟插件（cadt-ruling）走同一条转换规则
+# ---------------------------------------------------------------------------
+
+CADT_ROOT = PLUGIN_ROOT.parent.parent / "cadt-ruling"
+
+
+def test_builtin_config_keeps_installed_names():
+    """本插件的名字与变量名不许漂：宿主里已按这些名字装了技能与 agent。"""
+    _ensure_scripts_on_path()
+    import generate_qoder_artifacts as module
+
+    config = module.resolve_plugin_config(module.PLUGIN_ROOT)
+
+    assert config["env_var"] == "WEBNOVEL_PLUGIN_ROOT"
+    assert config["agent_prefix"] == "webnovel"
+    assert config["manifest_rel"] == "webnovel-writer/qoder_artifacts.json"
+    assert config["agent_name_map"], "本插件必须沿用显式规范名映射"
+
+
+def test_sibling_plugin_config_is_derived(tmp_path):
+    _ensure_scripts_on_path()
+    import generate_qoder_artifacts as module
+
+    sibling = tmp_path / "cadt-ruling"
+    sibling.mkdir()
+    config = module.resolve_plugin_config(sibling)
+
+    assert config["env_var"] == "CADT_RULING_PLUGIN_ROOT"
+    assert config["agent_prefix"] == "cadt-ruling"
+    assert config["manifest_rel"] == "cadt-ruling/qoder_artifacts.json"
+
+
+def test_agent_canonical_name_rule(tmp_path):
+    """规范名以插件自带的 name-map 为准；没有 map 才套默认规则（已带前缀保持，裸名加前缀）。"""
+    _ensure_scripts_on_path()
+    import generate_qoder_artifacts as module
+
+    # 无 map：走默认规则
+    bare = module.resolve_plugin_config(tmp_path / "cadt-ruling")
+    assert module._agent_canonical_name(bare, "analyzer.md") == "cadt-ruling-analyzer"
+    assert module._agent_canonical_name(bare, "cadt-ruling-analyzer.md") == "cadt-ruling-analyzer"
+    assert module._agent_canonical_name(bare, "ruling-executor.md") == "cadt-ruling-ruling-executor"
+
+    # 有 map：插件自己定的名字胜出（避免叠词，也不让转换脚本替作者命名）
+    plugin = tmp_path / "named" / "cadt-ruling"
+    (plugin / "agents").mkdir(parents=True)
+    (plugin / "agents" / "name-map.json").write_text(
+        json.dumps({"ruling-executor.md": "cadt-ruling-executor"}, ensure_ascii=False), encoding="utf-8"
+    )
+    config = module.resolve_plugin_config(plugin)
+    assert module._agent_canonical_name(config, "ruling-executor.md") == "cadt-ruling-executor"
+
+
+def test_agent_name_map_json_rejects_bad_shape(tmp_path):
+    _ensure_scripts_on_path()
+    import generate_qoder_artifacts as module
+
+    plugin = tmp_path / "bad" / "cadt-ruling"
+    (plugin / "agents").mkdir(parents=True)
+    (plugin / "agents" / "name-map.json").write_text('["不是映射"]', encoding="utf-8")
+
+    try:
+        module.resolve_plugin_config(plugin)
+    except SystemExit as exc:
+        assert "映射" in str(exc)
+    else:
+        raise AssertionError("name-map 形状非法时必须拒绝，否则产物名会静默错掉")
+
+
+def test_cadt_ruling_artifacts_build(tmp_path):
+    """真·兄弟插件：9 技能 + 2 agent 能生成，宿主痕迹清零，调用名换成规范名。"""
+    _ensure_scripts_on_path()
+    import generate_qoder_artifacts as module
+
+    if not (CADT_ROOT / "skills").is_dir():
+        pytest.skip("本机没有 cadt-ruling 仓库")
+
+    artifacts = module.build_artifacts(CADT_ROOT)
+    skills = sorted(rel for rel in artifacts if rel.startswith("skills/"))
+    agents = sorted(rel for rel in artifacts if rel.startswith("agents/cadt-ruling/"))
+
+    assert len(skills) == 9, skills
+    assert agents == [
+        "agents/cadt-ruling/cadt-ruling-analyzer.md",
+        "agents/cadt-ruling/cadt-ruling-executor.md",
+    ], agents
+
+    forbidden = module.forbidden_tokens(module.resolve_plugin_config(CADT_ROOT))
+    for rel, text in artifacts.items():
+        assert not [token for token in forbidden if token in text], rel
+
+    write = artifacts["skills/cadt-ruling/SKILL.md"]
+    assert "CADT_RULING_PLUGIN_ROOT:=" in write, "缺宿主引导"
+    assert "cadt-ruling-executor" in artifacts["skills/cadt-ruling-execute/SKILL.md"], "调用名必须已换成规范名"
