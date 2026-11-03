@@ -220,6 +220,8 @@ _PLOT_SECTION_FIELD_MAP = {
     "cen": "cen",
     "必须覆盖节点": "mandatory_nodes",
     "本章禁区": "prohibitions",
+    "禁区": "prohibitions",
+    "禁忌": "prohibitions",
 }
 
 _CHAPTER_HEADING_RE = re.compile(
@@ -260,6 +262,8 @@ _DIRECTIVE_FIELD_MAP = {
     "cen": "cen",
     "必须覆盖节点": "must_cover_nodes",
     "本章禁区": "forbidden_zones",
+    "禁区": "forbidden_zones",
+    "禁忌": "forbidden_zones",
     "章末未闭合问题": "chapter_end_open_question",
     "章末问题": "chapter_end_open_question",
     "钩子类型": "hook_type",

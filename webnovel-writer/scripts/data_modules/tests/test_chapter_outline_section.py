@@ -269,3 +269,32 @@ def test_directive_unmapped_field_does_not_pollute_list(tmp_path):
 
     assert directive.get("must_cover_nodes") == ["CBN + CPN5"], directive
     assert not any("爽点" in item for item in directive.get("must_cover_nodes") or []), directive
+
+
+def test_jinji_alias_populates_prohibitions(tmp_path):
+    """本书章纲用「禁忌」而非「本章禁区」；两条别名都要落到同一个字段。"""
+    root = _project(
+        tmp_path,
+        "\n".join(
+            [
+                "### 第64章 生日二字",
+                "- **CBN**：三件礼物与两本日记",
+                "- **禁忌**：",
+                "  1. 不写她察觉病情",
+                "  2. 不出现「最后一次」字样",
+                "",
+            ]
+        ),
+    )
+
+    structure = load_chapter_plot_structure(root, 64)
+    directive = load_chapter_execution_directive(root, 64)
+
+    assert structure.get("prohibitions") == [
+        "不写她察觉病情",
+        "不出现「最后一次」字样",
+    ], structure
+    assert directive.get("forbidden_zones") == [
+        "不写她察觉病情",
+        "不出现「最后一次」字样",
+    ], directive
