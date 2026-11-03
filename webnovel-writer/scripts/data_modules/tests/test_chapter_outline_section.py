@@ -298,3 +298,82 @@ def test_jinji_alias_populates_prohibitions(tmp_path):
         "不写她察觉病情",
         "不出现「最后一次」字样",
     ], directive
+
+
+# ---------------------------------------------------------------------------
+# 卷内重编号方言（时空纪元卷10 起）与空壳垫片回落
+# ---------------------------------------------------------------------------
+
+_V10_BODY = "\n".join(
+    [
+        "### 卷内 1（全局 634）· 五十年",
+        "",
+        "- **时间锚点**：2077-02-04 08:00 ｜ 章内跨度：约1小时",
+        "- **目标**：五十周年纪念确立「守夜人」基调",
+        "- **CBN**：恩格瓦拉 | 独自站上断崖 | 上一代离场",
+        "- **禁忌**：",
+        "  1. 不写哭",
+        "  2. 不写庆祝",
+        "",
+        "### 卷内 2（全局 635）· 三份报告",
+        "",
+        "- **目标**：三份报告各自埋雷",
+        "",
+    ]
+)
+
+
+def _v10_project(tmp_path, shim_text: str | None = None):
+    outline_dir = tmp_path / "大纲"
+    outline_dir.mkdir()
+    (tmp_path / ".webnovel").mkdir()
+    (tmp_path / ".webnovel" / "state.json").write_text(
+        json.dumps({"progress": {"volumes_planned": [{"volume": 10, "chapters_range": "634-725"}]}}),
+        encoding="utf-8",
+    )
+    (outline_dir / "第10卷-详细大纲.md").write_text(_V10_BODY, encoding="utf-8")
+    if shim_text is not None:
+        shim_dir = outline_dir / "垫片" / "卷10"
+        shim_dir.mkdir(parents=True)
+        (shim_dir / "第0634章-卷10第01章-五十年.md").write_text(shim_text, encoding="utf-8")
+    return tmp_path
+
+
+def test_volume_local_global_heading_resolves(tmp_path):
+    """`### 卷内 1（全局 634）· 标题` 必须按全局号取到整段。"""
+    root = _v10_project(tmp_path)
+
+    outline = load_chapter_outline(root, 634, max_chars=None)
+
+    assert "守夜人" in outline, outline
+    assert "三份报告" not in outline, outline
+
+
+def test_empty_shim_falls_back_to_volume_outline(tmp_path):
+    """空壳垫片（只有标题＋生成注释）不算章纲，要回落到卷文件。"""
+    root = _v10_project(
+        tmp_path,
+        "# 第0634章-卷10第01章-五十年\n\n<!-- 机器生成垫片，勿手改。编号真源＝.webnovel/state.json -->\n",
+    )
+
+    outline = load_chapter_outline(root, 634, max_chars=None)
+    directive = load_chapter_execution_directive(root, 634)
+    structure = load_chapter_plot_structure(root, 634)
+
+    assert "守夜人" in outline, outline
+    assert directive.get("goal") == "五十周年纪念确立「守夜人」基调", directive
+    assert structure.get("prohibitions") == ["不写哭", "不写庆祝"], structure
+
+
+def test_shim_with_body_still_wins(tmp_path):
+    """垫片带正文时保持原有优先级：编号真源是它，不能被卷文件盖掉。"""
+    root = _v10_project(tmp_path, "# 第0634章-卷10第01章-五十年\n\n- **目标**：垫片里的目标\n")
+
+    assert "垫片里的目标" in load_chapter_outline(root, 634, max_chars=None)
+
+
+def test_local_number_does_not_cross_match_global(tmp_path):
+    """查卷内号 1 不能命中全局 634 那段（避免跨卷串号）。"""
+    root = _v10_project(tmp_path)
+
+    assert "守夜人" not in load_chapter_outline(root, 1, max_chars=None)

@@ -116,6 +116,44 @@ def _find_volume_outline_file(project_root: Path, chapter_num: int) -> Path | No
 
 _GENERIC_HEADING_RE = re.compile(r"^(#{1,6})\s+\S.*$", re.MULTILINE)
 
+# 卷内重编号方言（时空纪元卷10 起）：`### 卷内 1（全局 634）· 五十年`，章号取括号里的全局号。
+_VOLUME_LOCAL_HEADING_RE = re.compile(
+    r"^(#{1,6})\s*卷内\s*[0-9零〇一二两三四五六七八九十]+\s*[（(]\s*全局\s*([0-9]+)\s*[）)]",
+    re.MULTILINE,
+)
+
+_FIELD_LABEL_SHAPE_RE = re.compile(r"^[^：:。；]{1,24}[：:]")
+_BULLET_RE = re.compile(r"^[\-\*•]+\s*")
+
+
+def _chapter_heading_rows(content: str) -> list[tuple[int, int, int]]:
+    """统一两种章标题方言，返回按位置升序的 (起始偏移, 标题层级, 全局章号)。
+
+    两种方言都只匹配各自行首，不会重叠；无法解析出章号的标题丢弃。
+    """
+    rows: list[tuple[int, int, int]] = []
+    for match in _CHAPTER_HEADING_RE.finditer(content):
+        num = _parse_chinese_chapter_num(match.group(2))
+        if num is not None:
+            rows.append((match.start(), len(match.group(1)), num))
+    for match in _VOLUME_LOCAL_HEADING_RE.finditer(content):
+        rows.append((match.start(), len(match.group(1)), int(match.group(2))))
+    rows.sort(key=lambda row: row[0])
+    return rows
+
+
+def _has_outline_body(text: str) -> bool:
+    """是否有章纲字段行（顶格列表项 + 「短标签：」）。只有标题与生成注释的空壳返回 False。"""
+    for raw_line in str(text or "").splitlines():
+        if raw_line[:1] in (" ", "\t"):
+            continue
+        stripped = raw_line.strip()
+        if not _BULLET_RE.match(stripped):
+            continue
+        if _FIELD_LABEL_SHAPE_RE.match(_unbold_label(_clean_plot_line(stripped))):
+            return True
+    return False
+
 
 def _chapter_section_by_heading(content: str, chapter_num: int) -> str | None:
     """按通用章标题扫描取整章段落（`### 第63章 满室星光（…）` 这类无冒号写法也认）。
@@ -123,23 +161,22 @@ def _chapter_section_by_heading(content: str, chapter_num: int) -> str | None:
     段落边界：下一个同级/更高级的章标题，或层级更浅的任意 Markdown 标题（如 `## 卷末备注`），
     都没有就到文件尾。
     """
-    matches = list(_CHAPTER_HEADING_RE.finditer(content))
-    for index, match in enumerate(matches):
-        if _parse_chinese_chapter_num(match.group(2)) != chapter_num:
+    rows = _chapter_heading_rows(content)
+    for index, (start, level, num) in enumerate(rows):
+        if num != chapter_num:
             continue
-        level = len(match.group(1))
         end = len(content)
-        for nxt in matches[index + 1 :]:
-            if len(nxt.group(1)) <= level:
-                end = nxt.start()
+        for nxt_start, nxt_level, _ in rows[index + 1 :]:
+            if nxt_level <= level:
+                end = nxt_start
                 break
         for heading in _GENERIC_HEADING_RE.finditer(content):
-            if heading.start() <= match.end():
+            if heading.start() <= start:
                 continue
             if len(heading.group(1)) < level:
                 end = min(end, heading.start())
                 break
-        return content[match.start() : end].strip()
+        return content[start:end].strip()
     return None
 
 
@@ -185,13 +222,7 @@ def _parse_chinese_chapter_num(value: str) -> int | None:
 
 
 def _extract_directive_section(content: str, chapter_num: int) -> str | None:
-    matches = list(_CHAPTER_HEADING_RE.finditer(content))
-    for index, match in enumerate(matches):
-        parsed = _parse_chinese_chapter_num(match.group(2))
-        if parsed != chapter_num:
-            continue
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-        return content[match.start():end].strip()
+    # 与章纲正文共用同一套标题方言与段落边界，避免同一个文件里两套切段口径。
     return _extract_outline_section(content, chapter_num)
 
 
@@ -199,16 +230,18 @@ def load_chapter_outline(project_root: Path, chapter_num: int, max_chars: int | 
     outline_dir = project_root / "大纲"
 
     split_outline = _find_split_outline_file(outline_dir, chapter_num)
-    if split_outline is not None:
-        return split_outline.read_text(encoding="utf-8")
+    shim_text = split_outline.read_text(encoding="utf-8") if split_outline is not None else ""
+    # 垫片有章纲正文时仍以垫片为先（编号真源）；只有标题与生成注释的空壳不算正文。
+    if shim_text and _has_outline_body(shim_text):
+        return shim_text
 
     volume_outline = _find_volume_outline_file(project_root, chapter_num)
     if volume_outline is None:
-        return f"⚠️ 大纲文件不存在：第 {chapter_num} 章"
+        return shim_text if shim_text else f"⚠️ 大纲文件不存在：第 {chapter_num} 章"
 
     outline = _extract_outline_section(volume_outline.read_text(encoding="utf-8"), chapter_num)
     if outline is None:
-        return f"⚠️ 未找到第 {chapter_num} 章的大纲"
+        return shim_text if shim_text else f"⚠️ 未找到第 {chapter_num} 章的大纲"
 
     if max_chars and len(outline) > max_chars:
         return outline[:max_chars] + "\n...(已截断)"
@@ -296,10 +329,6 @@ def _clean_plot_line(line: str) -> str:
     text = re.sub(r"^[\-\*•]+\s*", "", text)
     text = re.sub(r"^\d+[\.、]\s*", "", text)
     return text.strip()
-
-
-_FIELD_LABEL_SHAPE_RE = re.compile(r"^[^：:。；]{1,24}[：:]")
-_BULLET_RE = re.compile(r"^[\-\*•]+\s*")
 
 
 def _starts_new_field(raw_line: str, cleaned: str) -> bool:
@@ -476,8 +505,10 @@ def parse_chapter_execution_directive(outline_text: str) -> Dict[str, Any]:
 def load_chapter_execution_directive(project_root: Path, chapter_num: int) -> Dict[str, Any]:
     outline_dir = project_root / "大纲"
     split_outline = _find_split_outline_file(outline_dir, chapter_num)
-    if split_outline is not None:
-        return parse_chapter_execution_directive(split_outline.read_text(encoding="utf-8"))
+    shim_text = split_outline.read_text(encoding="utf-8") if split_outline is not None else ""
+    # 与 load_chapter_outline 同口径：空壳垫片不算章纲，回落到卷文件的该章段落。
+    if shim_text and _has_outline_body(shim_text):
+        return parse_chapter_execution_directive(shim_text)
 
     volume_outline = _find_volume_outline_file(project_root, chapter_num)
     if volume_outline is None:
