@@ -6,11 +6,12 @@ import json
 import os
 import re
 import sys
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
 DISABLE_ENV = "WEBNOVEL_DISABLE_RUNTIME_GUARD_HOOK"
+DEBUG_ENV = "WEBNOVEL_HOOK_DEBUG"
 # state.json is intentionally NOT protected: audits routinely require bulk
 # fixes that update_state.py flags cannot express, and state.json has its own
 # backup + rebuild path (issue #113).
@@ -34,8 +35,52 @@ def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _probe_dir() -> Path:
+    """探针落盘目录：显式变量优先，否则用宿主家目录下的 webnovel-writer。"""
+    raw = os.environ.get("WEBNOVEL_HOOK_PROBE_DIR")
+    if raw and raw.strip():
+        return Path(raw.strip()).expanduser()
+    for name in (".qoder-cn", ".claude"):
+        candidate = Path.home() / name / "webnovel-writer"
+        if candidate.is_dir():
+            return candidate
+    return Path.home() / ".qoder-cn" / "webnovel-writer"
+
+
+def _probe_record(raw: str) -> None:
+    """WEBNOVEL_HOOK_DEBUG=1 时把收到的原始载荷落一行。
+
+    用途：实测不同宿主（Claude / Qoder）传进来的字段名，不改变拦截判定。
+    """
+    if not _truthy(os.environ.get(DEBUG_ENV)):
+        return
+    try:
+        target = _probe_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        record = {
+            "hook": "guard_runtime_write",
+            "bytes": len(raw),
+            "keys": sorted(str(key) for key in _json_keys(raw)),
+            "payload": raw[:4000],
+        }
+        with (target / "hook_probe.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        # 探针是旁路，绝不因为写日志失败而影响拦截或让宿主钩子报错。
+        return
+
+
+def _json_keys(raw: str) -> set[str]:
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return set()
+    return set(payload) if isinstance(payload, dict) else set()
+
+
 def _load_input() -> dict[str, Any]:
     raw = sys.stdin.read()
+    _probe_record(raw)
     if not raw.strip():
         return {}
     try:

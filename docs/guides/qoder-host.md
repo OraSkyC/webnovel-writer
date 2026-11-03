@@ -83,11 +83,39 @@ python -X utf8 webnovel-writer/scripts/generate_qoder_artifacts.py --check
 否则会和其他包的 agent 撞名）。新增 CLI 子命令不用改测试——守卫从 `data_modules/webnovel.py` 的
 `sub.add_parser("x")` 派生。
 
+## 运行时钩子（开场状态 + 写入拦截）
+
+Claude 侧那两个钩子脚本装的是同一份文件（不复制、不改逻辑），注册走独立脚本：
+
+```bash
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py            # 安装/更新（自动留备份）
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --check    # 漂移核对，非零退出
+python -X utf8 webnovel-writer/scripts/install_qoder_hooks.py --remove   # 只摘本插件条目
+```
+
+写进 `<host>/settings.json` 的 `hooks` 键，形状与 Qoder 自带插件的 `hooks/hooks.json` 一致
+（`SessionStart` / `PreToolUse` + `matcher` + `{"type":"command","name","command","timeout"}`）。
+合并只动带 `webnovel-writer-` 前缀 `name` 的条目，其它键与其它宿主编排的钩子原样保留；
+换插件根或解释器路径会报漂移（防止 settings 里留着旧安装位置）。
+
+**生效要重启 Qoder**。装载后 Qoder 传给钩子的 stdin 字段名尚未实测，脚本对
+`tool_name|toolName|tool`、`tool_input|toolInput|input`、`file_path|path|filename` 都做了兼容，
+并留了探针：`WEBNOVEL_HOOK_DEBUG=1` 时把收到的原始载荷落一行到
+`~/.qoder-cn/webnovel-writer/hook_probe.jsonl`（只读旁路，不改变拦截判定，默认不写）。
+
+两处宿主差异带来的修复（Claude 侧同样受益）：
+
+- **开场钩子改跑 `preflight`**（实测 0.4s），不再跑 `project-status`——后者在 705 章的书上实测
+  25-30 秒，作为会话开场必然超时静默；同时先 `where` 解析不到书项目就整个钩子静默退出，
+  非书项目（写代码、做 PPT 的会话）不会再被塞「未命名项目 / blocking: missing .webnovel/state.json」。
+- **待裁计数改真口径**：原先数 `commits` 目录里的文件总数（等于每章提交都算待裁，61/726 这种数没有信息量），
+  现在只数 `meta.status == rejected` 或 `disambiguation_result.pending` 非空的章。
+
 ## 未做与边界
 
 | 项 | 状态 | 替代做法 |
 |----|------|----------|
-| Hooks（`session_start.py` 开场状态、`guard_runtime_write.py` 写入拦截） | 未移植 | 开场状态跑 `project-status --format summary`；写入保护靠 runtime 侧 `write-gate` 与 `chapter-commit` 门禁，技能流程本身必经 |
+| Hooks（`session_start.py` 开场状态、`guard_runtime_write.py` 写入拦截） | 已装到用户级 settings.json，**生效需重启**；stdin 字段名待首次实测（探针已就位） | 手工替代：`webnovel.py preflight` / `project-status --format summary`；写入保护本来也在 runtime 侧 `write-gate` 与 `chapter-commit` 门禁里 |
 | 裁决台 `/cadt-ruling`（另一个插件） | Qoder 侧未装 | 写章技能在待裁卡出现时按源里的分支退回 `AskUserQuestion`；需要台子逐条裁时把 `cadt-ruling` 也走一遍同样的生成流程 |
 | Dashboard | 可用 | `/webnovel-dashboard` 起的是本地只读服务，与宿主无关 |
 | 全量 pytest 在本仓库路径下 | 1 例失败 | `test_webnovel_skill_flow_..._stubbed_vector_model` 的临时文件全路径 261 字符撞 Windows 260 上限；同一 commit 在短路径（如 `D:\wnx`）通过。要么把 checkout 放短路径，要么改 `scripts/conftest.py` 的 basetemp 位置 |
